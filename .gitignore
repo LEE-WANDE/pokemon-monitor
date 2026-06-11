@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+
+# 로컬 전용 파일
+*.db
+*.db-shm
+*.db-wal
+*.lock
+*.log
+
+# 디버그 파일
+debug_*.html
+
+# 환경변수 (로컬 테스트용)
+.env

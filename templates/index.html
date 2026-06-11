@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>포켓몬 카드 재고 모니터</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="header-left">
+        <h1>🃏 포켓몬 카드 재고 모니터</h1>
+        <span id="last-check-label" class="last-check">마지막 체크: 로딩 중…</span>
+      </div>
+      <div class="header-right">
+        <button id="btn-check" class="btn-check" onclick="triggerCheck()">
+          🔄 지금 체크
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="status-bar" class="status-bar hidden"></div>
+
+    <div id="summary" class="summary hidden">
+      <span id="summary-total"></span>
+      <span id="summary-new"></span>
+      <span id="summary-restocked"></span>
+      <span id="summary-soldout"></span>
+    </div>
+
+    <div id="product-grid" class="product-grid">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p>상품 불러오는 중…</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const REFRESH_INTERVAL = 30 * 1000; // 30초마다 자동 갱신
+    const BADGE_TTL_MS     = 24 * 60 * 60 * 1000; // 24시간
+
+    // ── 데이터 로드 ─────────────────────────────────────────────────────────
+
+    async function loadProducts() {
+      try {
+        const res  = await fetch('/api/products');
+        const data = await res.json();
+        renderProducts(data.products || []);
+        renderLastCheck(data.last_check);
+      } catch (e) {
+        showStatus('상품을 불러오지 못했습니다: ' + e.message, 'error');
+      }
+    }
+
+    // ── 렌더링 ───────────────────────────────────────────────────────────────
+
+    function renderProducts(products) {
+      const grid = document.getElementById('product-grid');
+
+      if (!products.length) {
+        grid.innerHTML = '<div class="empty">아직 등록된 상품이 없습니다.<br>잠시 후 자동으로 첫 번째 체크가 진행됩니다.</div>';
+        return;
+      }
+
+      // 요약 카운트
+      const now          = Date.now();
+      const newItems     = products.filter(p => p.is_new      === 1 && isFresh(p.detected_at, now));
+      const restockItems = products.filter(p => p.is_restocked === 1 && isFresh(p.detected_at, now));
+      const soldoutItems = products.filter(p => p.status === '품절');
+
+      const summary = document.getElementById('summary');
+      summary.classList.remove('hidden');
+      document.getElementById('summary-total').textContent     = `총 ${products.length}개`;
+      document.getElementById('summary-new').textContent       = newItems.length     ? `🆕 신규 ${newItems.length}개`     : '';
+      document.getElementById('summary-restocked').textContent = restockItems.length ? `🔄 재입고 ${restockItems.length}개` : '';
+      document.getElementById('summary-soldout').textContent   = soldoutItems.length ? `❌ 품절 ${soldoutItems.length}개`   : '';
+
+      // 카드 렌더링
+      grid.innerHTML = products.map(p => renderCard(p, now)).join('');
+    }
+
+    function isFresh(detectedAt, now) {
+      if (!detectedAt) return false;
+      const t = new Date(detectedAt.replace(' ', 'T')).getTime();
+      return (now - t) < BADGE_TTL_MS;
+    }
+
+    function renderCard(p, now) {
+      const isNewBadge       = p.is_new       === 1;
+      const isRestockBadge   = p.is_restocked === 1 && isFresh(p.detected_at, now);
+      const soldOut          = p.status === '품절';
+      const almostOut        = p.status === '판매임박';
+
+      const imgSrc = p.image_url
+        ? `<img src="${escHtml(p.image_url)}" alt="${escHtml(p.name)}" loading="lazy" onerror="this.style.display='none'">`
+        : `<div class="no-image">📦</div>`;
+
+      const badges = [
+        isNewBadge     ? '<span class="badge badge-new">NEW</span>'   : '',
+        isRestockBadge ? '<span class="badge badge-restock">재입고</span>' : '',
+      ].join('');
+
+      const statusClass = soldOut    ? 'status-soldout'
+                        : almostOut ? 'status-almost'
+                        : 'status-sale';
+      const statusText  = soldOut    ? '품절'
+                        : almostOut ? '판매임박'
+                        : '판매중';
+
+      const cardClass = `product-card${soldOut ? ' card-soldout' : ''}${isNewBadge ? ' card-new' : ''}`;
+      const href      = p.url ? `href="${escHtml(p.url)}" target="_blank" rel="noopener"` : '';
+
+      return `
+        <a class="${cardClass}" ${href}>
+          <div class="card-image-wrap">
+            ${imgSrc}
+            <div class="card-badges">${badges}</div>
+          </div>
+          <div class="card-body">
+            <p class="card-name">${escHtml(p.name)}</p>
+            <p class="card-price">${escHtml(p.price || '—')}</p>
+            <span class="status-chip ${statusClass}">${statusText}</span>
+          </div>
+        </a>`;
+    }
+
+    function renderLastCheck(lastCheck) {
+      const el = document.getElementById('last-check-label');
+      if (!lastCheck) {
+        el.textContent = '마지막 체크: 없음';
+        return;
+      }
+      const dt = new Date(lastCheck.checked_at.replace(' ', 'T'));
+      const ok = lastCheck.success === 1;
+      el.textContent = `마지막 체크: ${formatDate(dt)}`;
+      el.className   = 'last-check ' + (ok ? 'check-ok' : 'check-fail');
+      if (lastCheck.message) el.title = lastCheck.message;
+    }
+
+    // ── 수동 체크 ────────────────────────────────────────────────────────────
+
+    async function triggerCheck() {
+      const btn = document.getElementById('btn-check');
+      btn.disabled    = true;
+      btn.textContent = '⏳ 체크 중…';
+      showStatus('체크를 시작했습니다. 잠시 기다려주세요…', 'info');
+
+      try {
+        await fetch('/api/check', { method: 'POST' });
+        // 5초 후 자동 갱신 (크롤링 완료 예상 시간)
+        setTimeout(() => { loadProducts(); }, 5000);
+        setTimeout(() => { loadProducts(); }, 15000);
+        setTimeout(() => { loadProducts(); }, 30000);
+      } catch (e) {
+        showStatus('체크 요청 실패: ' + e.message, 'error');
+      } finally {
+        setTimeout(() => {
+          btn.disabled    = false;
+          btn.textContent = '🔄 지금 체크';
+        }, 8000);
+      }
+    }
+
+    // ── 상태 바 ──────────────────────────────────────────────────────────────
+
+    let _statusTimer;
+    function showStatus(msg, type = 'info') {
+      const bar = document.getElementById('status-bar');
+      bar.textContent = msg;
+      bar.className   = `status-bar status-${type}`;
+      clearTimeout(_statusTimer);
+      _statusTimer = setTimeout(() => bar.classList.add('hidden'), 6000);
+    }
+
+    // ── 유틸 ─────────────────────────────────────────────────────────────────
+
+    function escHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function formatDate(d) {
+      return d.toLocaleString('ko-KR', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      });
+    }
+
+    // ── 초기화 ───────────────────────────────────────────────────────────────
+
+    loadProducts();
+    setInterval(loadProducts, REFRESH_INTERVAL);
+  </script>
+</body>
+</html>
