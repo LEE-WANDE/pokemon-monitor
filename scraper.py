@@ -171,7 +171,7 @@ def _get_pokemonstore_products() -> list[dict]:
 
 def _passes_filter(product: dict) -> bool:
     name = product.get("name", "")
-    if "박스" not in name or "확장팩" not in name:
+    if "확장팩" not in name:
         return False
     if "1팩" in name or "카드세트" in name:
         return False
