@@ -1,13 +1,18 @@
 """
 통합 상품 스크래퍼
 
+[20분 주기]
 1. 포켓몬스토어 (shop-api.e-ncp.com REST API)
-2. 네이버 브랜드스토어 · 스마트스토어 × 2  (HTML __PRELOADED_STATE__ 파싱)
+2. 카드마니아     (HTML — Godomall)
+3. TCG박스        (HTML — Cafe24)
 
-수집 후 공통 필터 적용:
-  - 상품명에 "박스" AND "확장팩" 모두 포함
-  - 상품명에 "1팩" OR "카드세트" 포함 시 제외
-  - 가격 범위: 20,000원 ~ 55,000원
+[60분 주기]
+4. 네이버 브랜드스토어 · 스마트스토어 × 2  (HTML __PRELOADED_STATE__)
+
+필터:
+  - "확장팩" or "하이클래스팩" 포함
+  - "1팩", "카드세트" 포함 시 제외
+  - 가격 20,000~55,000원
 """
 
 import html as html_lib
@@ -19,6 +24,7 @@ import time
 
 import requests
 
+import html_scraper
 import naver_scraper
 from config import BASE_URL, CATEGORY_NO
 
@@ -184,15 +190,46 @@ def _passes_filter(product: dict) -> bool:
 # ── 공개 API ─────────────────────────────────────────────────────────────────
 
 def get_pokemonstore_products() -> tuple[list[dict], str]:
-    """포켓몬스토어만 수집 + 필터. (20분 주기 스케줄용)"""
-    try:
-        raw = _get_pokemonstore_products()
-    except Exception as e:
-        logger.error("포켓몬스토어 수집 실패: %s", e, exc_info=True)
-        return [], f"오류:{e}"
+    """포켓몬스토어 + 카드마니아 + TCG박스 수집 + 필터. (20분 주기)
+    사이트별 예외는 로그만 남기고 나머지 계속 수집.
+    """
+    combined: dict[str, dict] = {}
+    parts:    list[str]       = []
 
-    filtered = [p for p in raw if _passes_filter(p)]
-    return filtered, f"api (원본:{len(raw)} → 필터후:{len(filtered)})"
+    # ── 포켓몬스토어 ──────────────────────────────────────────────────────────
+    try:
+        raw      = _get_pokemonstore_products()
+        filtered = [p for p in raw if _passes_filter(p)]
+        for p in filtered:
+            combined[p["product_id"]] = p
+        parts.append(f"ps:{len(filtered)}")
+    except Exception as e:
+        logger.error("포켓몬스토어 수집 실패 (다음 주기 재시도): %s", e, exc_info=True)
+        parts.append("ps:오류")
+
+    # ── 카드마니아 ────────────────────────────────────────────────────────────
+    try:
+        raw      = html_scraper.get_cardmania_products()
+        filtered = [p for p in raw if _passes_filter(p)]
+        for p in filtered:
+            combined[p["product_id"]] = p
+        parts.append(f"카드마니아:{len(filtered)}")
+    except Exception as e:
+        logger.error("카드마니아 수집 실패 (다음 주기 재시도): %s", e, exc_info=True)
+        parts.append("카드마니아:오류")
+
+    # ── TCG박스 ───────────────────────────────────────────────────────────────
+    try:
+        raw      = html_scraper.get_tcgbox_products()
+        filtered = [p for p in raw if _passes_filter(p)]
+        for p in filtered:
+            combined[p["product_id"]] = p
+        parts.append(f"TCG박스:{len(filtered)}")
+    except Exception as e:
+        logger.error("TCG박스 수집 실패 (다음 주기 재시도): %s", e, exc_info=True)
+        parts.append("TCG박스:오류")
+
+    return list(combined.values()), " | ".join(parts)
 
 
 def get_naver_products() -> tuple[list[dict], str]:
