@@ -27,10 +27,13 @@ _check_lock = threading.Lock()
 # ── Discord 알림 ───────────────────────────────────────────────────────────────
 
 def send_discord(product: dict, badge: str):
+    site_name  = product.get("site_name", "")
+    site_label = f"[{site_name}] " if site_name else ""
+
     if badge == "new":
-        title, color = "🆕 신규 상품 등록!", 0xE53935
+        title, color = f"🆕 신규 상품 등록! {site_label}", 0xE53935
     else:
-        title, color = "🔄 재입고 감지!", 0x1E88E5
+        title, color = f"🔄 재입고 감지! {site_label}", 0x1E88E5
 
     embed = {
         "title": title,
@@ -42,6 +45,8 @@ def send_discord(product: dict, badge: str):
             {"name": "📦 상태", "value": product.get("status", "판매중"), "inline": True},
         ],
     }
+    if site_name:
+        embed["fields"].append({"name": "🏪 사이트", "value": site_name, "inline": True})
     if product.get("image_url"):
         embed["thumbnail"] = {"url": product["image_url"]}
 

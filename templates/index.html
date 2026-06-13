@@ -99,6 +99,10 @@
         ? `<img src="${escHtml(p.image_url)}" alt="${escHtml(p.name)}" loading="lazy" onerror="this.style.display='none'">`
         : `<div class="no-image">📦</div>`;
 
+      const siteBadge = p.site_name
+        ? `<span class="badge badge-site">${escHtml(p.site_name)}</span>`
+        : '';
+
       const badges = [
         isNewBadge     ? '<span class="badge badge-new">NEW</span>'   : '',
         isRestockBadge ? '<span class="badge badge-restock">재입고</span>' : '',
@@ -121,6 +125,7 @@
             <div class="card-badges">${badges}</div>
           </div>
           <div class="card-body">
+            ${siteBadge}
             <p class="card-name">${escHtml(p.name)}</p>
             <p class="card-price">${escHtml(p.price || '—')}</p>
             <span class="status-chip ${statusClass}">${statusText}</span>

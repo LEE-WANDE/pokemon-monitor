@@ -24,6 +24,7 @@ def init_db():
                 status       TEXT    DEFAULT '판매중',
                 url          TEXT    DEFAULT '',
                 image_url    TEXT    DEFAULT '',
+                site_name    TEXT    DEFAULT '',
                 first_seen   TEXT    DEFAULT (datetime('now', 'localtime')),
                 last_checked TEXT    DEFAULT (datetime('now', 'localtime')),
                 is_new       INTEGER DEFAULT 0,
@@ -38,6 +39,11 @@ def init_db():
                 message    TEXT    DEFAULT ''
             );
         """)
+        # 기존 DB 마이그레이션: site_name 컬럼 없으면 추가
+        try:
+            conn.execute("ALTER TABLE products ADD COLUMN site_name TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  # 이미 존재
 
 
 def get_product_count():
@@ -78,9 +84,9 @@ def upsert_product(product: dict):
                 conn.execute(
                     """
                     INSERT INTO products
-                        (product_id, name, price, status, url, image_url,
+                        (product_id, name, price, status, url, image_url, site_name,
                          is_new, is_restocked, detected_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 1, 0, datetime('now', 'localtime'))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, datetime('now', 'localtime'))
                     """,
                     (
                         product["product_id"],
@@ -89,14 +95,15 @@ def upsert_product(product: dict):
                         product.get("status", "판매중"),
                         product.get("url", ""),
                         product.get("image_url", ""),
+                        product.get("site_name", ""),
                     ),
                 )
                 return True, False
 
             existing = dict(existing)
-            was_sold_out = existing["status"] == "품절"
+            was_sold_out  = existing["status"] == "품절"
             now_available = product.get("status", "판매중") == "판매중"
-            is_restocked = was_sold_out and now_available
+            is_restocked  = was_sold_out and now_available
 
             conn.execute(
                 """
@@ -106,6 +113,7 @@ def upsert_product(product: dict):
                     status       = ?,
                     url          = ?,
                     image_url    = ?,
+                    site_name    = ?,
                     last_checked = datetime('now', 'localtime'),
                     is_new       = 0,
                     is_restocked = ?,
@@ -121,6 +129,7 @@ def upsert_product(product: dict):
                     product.get("status", "판매중"),
                     product.get("url", ""),
                     product.get("image_url", ""),
+                    product.get("site_name", ""),
                     1 if is_restocked else 0,
                     1 if is_restocked else 0,
                     product["product_id"],

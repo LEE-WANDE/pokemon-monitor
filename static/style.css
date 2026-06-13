@@ -192,6 +192,7 @@ main {
 }
 .badge-new     { background: var(--primary); color: #fff; }
 .badge-restock { background: var(--blue);    color: #fff; }
+.badge-site    { background: #555; color: #fff; font-size: .65rem; border-radius: 3px; padding: 1px 5px; display: inline-block; margin-bottom: 4px; text-transform: none; }
 
 /* ── 카드 바디 ─────────────────────────────────────────────────────────── */
 .card-body {
