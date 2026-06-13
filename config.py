@@ -13,7 +13,8 @@ TARGET_URL = os.environ.get(
 BASE_URL = "https://www.pokemonstore.co.kr"
 CATEGORY_NO = "488359"
 
-CHECK_INTERVAL_MINUTES = int(os.environ.get("CHECK_INTERVAL", "20"))
+CHECK_INTERVAL_MINUTES       = int(os.environ.get("CHECK_INTERVAL",       "20"))
+NAVER_CHECK_INTERVAL_MINUTES = int(os.environ.get("NAVER_CHECK_INTERVAL", "30"))
 PORT = int(os.environ.get("PORT", "8080"))
 DB_PATH = os.environ.get("DB_PATH", "pokemon.db")
 LOCK_FILE = "pokemon_monitor.lock"

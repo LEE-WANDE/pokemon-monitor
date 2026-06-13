@@ -183,25 +183,26 @@ def _passes_filter(product: dict) -> bool:
 
 # ── 공개 API ─────────────────────────────────────────────────────────────────
 
-def get_products() -> tuple[list[dict], str]:
-    """
-    모든 사이트 상품 수집 후 필터 적용.
-    Returns (filtered_products, summary_string)
+def get_pokemonstore_products() -> tuple[list[dict], str]:
+    """포켓몬스토어만 수집 + 필터. (20분 주기 스케줄용)"""
+    try:
+        raw = _get_pokemonstore_products()
+    except Exception as e:
+        logger.error("포켓몬스토어 수집 실패: %s", e, exc_info=True)
+        return [], f"오류:{e}"
+
+    filtered = [p for p in raw if _passes_filter(p)]
+    return filtered, f"api (원본:{len(raw)} → 필터후:{len(filtered)})"
+
+
+def get_naver_products() -> tuple[list[dict], str]:
+    """네이버 3개 사이트 수집 + 필터. (60분 주기 스케줄용)
+    429 등 사이트 단위 오류는 로그 후 건너뜀 — 나머지 사이트는 계속 수집.
     """
     raw_all: list[dict] = []
     errors:  list[str]  = []
     counts:  list[str]  = []
 
-    # 1. 포켓몬스토어
-    try:
-        ps = _get_pokemonstore_products()
-        raw_all.extend(ps)
-        counts.append(f"포켓몬스토어:{len(ps)}")
-    except Exception as e:
-        logger.error("포켓몬스토어 수집 실패: %s", e, exc_info=True)
-        errors.append(f"포켓몬스토어:{e}")
-
-    # 2. 네이버 3개 사이트 (사이트 간 딜레이로 차단 완화)
     for i, cfg in enumerate(_NAVER_SITES):
         if i > 0:
             delay = random.uniform(4, 8)
@@ -212,15 +213,25 @@ def get_products() -> tuple[list[dict], str]:
             raw_all.extend(items)
             counts.append(f"{cfg['site_name']}:{len(items)}")
         except Exception as e:
-            logger.error("[%s] 수집 실패: %s", cfg["site_name"], e, exc_info=True)
-            errors.append(f"{cfg['site_name']}:{e}")
+            # 429 포함 모든 오류: 로그만 남기고 다음 사이트 계속
+            logger.error("[%s] 수집 실패 (다음 주기에 재시도): %s", cfg["site_name"], e)
+            errors.append(f"{cfg['site_name']}:오류")
 
-    # 3. 필터
     filtered = [p for p in raw_all if _passes_filter(p)]
-
-    summary = ", ".join(counts)
+    summary  = ", ".join(counts) or "없음"
     if errors:
-        summary += " | 오류: " + ", ".join(errors)
-    method = f"api+html (원본:{len(raw_all)} → 필터후:{len(filtered)}) [{summary}]"
+        summary += " | 실패: " + ", ".join(errors)
+    return filtered, f"html (원본:{len(raw_all)} → 필터후:{len(filtered)}) [{summary}]"
 
-    return filtered, method
+
+def get_products() -> tuple[list[dict], str]:
+    """포켓몬스토어 + 네이버 전체 수집. (수동 체크 /api/check 용)"""
+    ps_products,    ps_method    = get_pokemonstore_products()
+    naver_products, naver_method = get_naver_products()
+
+    seen: dict[str, dict] = {}
+    for p in ps_products + naver_products:
+        seen[p["product_id"]] = p
+
+    all_products = list(seen.values())
+    return all_products, f"ps:[{ps_method}] naver:[{naver_method}]"
