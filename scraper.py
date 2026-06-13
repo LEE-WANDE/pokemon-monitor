@@ -13,7 +13,9 @@
 import html as html_lib
 import logging
 import math
+import random
 import re
+import time
 
 import requests
 
@@ -199,8 +201,12 @@ def get_products() -> tuple[list[dict], str]:
         logger.error("포켓몬스토어 수집 실패: %s", e, exc_info=True)
         errors.append(f"포켓몬스토어:{e}")
 
-    # 2. 네이버 3개 사이트
-    for cfg in _NAVER_SITES:
+    # 2. 네이버 3개 사이트 (사이트 간 딜레이로 차단 완화)
+    for i, cfg in enumerate(_NAVER_SITES):
+        if i > 0:
+            delay = random.uniform(4, 8)
+            logger.info("사이트 간 딜레이: %.1fs", delay)
+            time.sleep(delay)
         try:
             items = naver_scraper.get_naver_products(**cfg)
             raw_all.extend(items)
