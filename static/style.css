@@ -112,6 +112,17 @@ main {
   color: var(--text-sub);
 }
 .summary span:first-child { color: var(--text); }
+.summary span[data-filter] {
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.summary span[data-filter]:hover { background: #f0f2f5; border-color: #bbb; }
+.summary span[data-filter].active {
+  background: var(--primary);
+  color: #fff !important;
+  border-color: var(--primary);
+}
 
 /* ── 상품 그리드 ────────────────────────────────────────────────────────── */
 .product-grid {

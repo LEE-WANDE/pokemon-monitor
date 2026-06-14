@@ -25,10 +25,11 @@
     <div id="status-bar" class="status-bar hidden"></div>
 
     <div id="summary" class="summary hidden">
-      <span id="summary-total"></span>
-      <span id="summary-new"></span>
-      <span id="summary-restocked"></span>
-      <span id="summary-soldout"></span>
+      <span id="summary-total"     data-filter="all"       onclick="setFilter('all')"></span>
+      <span id="summary-new"       data-filter="new"       onclick="setFilter('new')"></span>
+      <span id="summary-restocked" data-filter="restocked" onclick="setFilter('restocked')"></span>
+      <span id="summary-available" data-filter="available" onclick="setFilter('available')"></span>
+      <span id="summary-soldout"   data-filter="soldout"   onclick="setFilter('soldout')"></span>
     </div>
 
     <div id="product-grid" class="product-grid">
@@ -42,6 +43,9 @@
   <script>
     const REFRESH_INTERVAL = 30 * 1000; // 30초마다 자동 갱신
     const BADGE_TTL_MS     = 24 * 60 * 60 * 1000; // 24시간
+
+    let _allProducts  = [];
+    let _activeFilter = null; // null | 'new' | 'restocked' | 'available' | 'soldout'
 
     // ── 데이터 로드 ─────────────────────────────────────────────────────────
 
@@ -66,21 +70,64 @@
         return;
       }
 
+      _allProducts = products;
+
       // 요약 카운트
-      const now          = Date.now();
-      const newItems     = products.filter(p => p.is_new      === 1 && isFresh(p.detected_at, now));
-      const restockItems = products.filter(p => p.is_restocked === 1 && isFresh(p.detected_at, now));
-      const soldoutItems = products.filter(p => p.status === '품절');
+      const now            = Date.now();
+      const newItems       = products.filter(p => p.is_new       === 1 && isFresh(p.detected_at, now));
+      const restockItems   = products.filter(p => p.is_restocked === 1 && isFresh(p.detected_at, now));
+      const soldoutItems   = products.filter(p => p.status === '품절');
+      const availableItems = products.filter(p => p.status !== '품절');
 
       const summary = document.getElementById('summary');
       summary.classList.remove('hidden');
       document.getElementById('summary-total').textContent     = `총 ${products.length}개`;
-      document.getElementById('summary-new').textContent       = newItems.length     ? `🆕 신규 ${newItems.length}개`     : '';
-      document.getElementById('summary-restocked').textContent = restockItems.length ? `🔄 재입고 ${restockItems.length}개` : '';
-      document.getElementById('summary-soldout').textContent   = soldoutItems.length ? `❌ 품절 ${soldoutItems.length}개`   : '';
+      document.getElementById('summary-new').textContent       = newItems.length       ? `🆕 신규 ${newItems.length}개`       : '';
+      document.getElementById('summary-restocked').textContent = restockItems.length   ? `🔄 재입고 ${restockItems.length}개`  : '';
+      document.getElementById('summary-available').textContent = availableItems.length ? `✅ 판매중 ${availableItems.length}개` : '';
+      document.getElementById('summary-soldout').textContent   = soldoutItems.length   ? `❌ 품절 ${soldoutItems.length}개`    : '';
 
-      // 카드 렌더링
-      grid.innerHTML = products.map(p => renderCard(p, now)).join('');
+      applyFilter();
+    }
+
+    // ── 필터 ─────────────────────────────────────────────────────────────────
+
+    function setFilter(filter) {
+      // 같은 버튼 재클릭 or 총개수 클릭 → 전체 보기 복귀
+      if (filter === 'all' || _activeFilter === filter) {
+        _activeFilter = null;
+      } else {
+        _activeFilter = filter;
+      }
+      applyFilter();
+      updateFilterUI();
+    }
+
+    function applyFilter() {
+      const now  = Date.now();
+      let list   = _allProducts;
+
+      if (_activeFilter === 'new') {
+        list = _allProducts.filter(p => p.is_new === 1 && isFresh(p.detected_at, now));
+      } else if (_activeFilter === 'restocked') {
+        list = _allProducts.filter(p => p.is_restocked === 1 && isFresh(p.detected_at, now));
+      } else if (_activeFilter === 'available') {
+        list = _allProducts.filter(p => p.status !== '품절');
+      } else if (_activeFilter === 'soldout') {
+        list = _allProducts.filter(p => p.status === '품절');
+      }
+
+      const grid = document.getElementById('product-grid');
+      grid.innerHTML = list.length
+        ? list.map(p => renderCard(p, now)).join('')
+        : '<div class="empty">해당 조건의 상품이 없습니다.</div>';
+    }
+
+    function updateFilterUI() {
+      document.querySelectorAll('.summary span[data-filter]').forEach(span => {
+        const isActive = span.dataset.filter === (_activeFilter || 'all');
+        span.classList.toggle('active', isActive);
+      });
     }
 
     function isFresh(detectedAt, now) {
