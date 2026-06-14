@@ -229,6 +229,41 @@ def get_pokemonstore_products() -> tuple[list[dict], str]:
         logger.error("TCG박스 수집 실패 (다음 주기 재시도): %s", e, exc_info=True)
         parts.append("TCG박스:오류")
 
+    # ── 옥션 ──────────────────────────────────────────────────────────────────
+    try:
+        raw      = html_scraper.get_auction_products()
+        filtered = [p for p in raw if _passes_filter(p)]
+        for p in filtered:
+            combined[p["product_id"]] = p
+        parts.append(f"옥션:{len(filtered)}")
+    except Exception as e:
+        logger.error("옥션 수집 실패 (다음 주기 재시도): %s", e, exc_info=True)
+        parts.append("옥션:오류")
+
+    # ── G마켓 ─────────────────────────────────────────────────────────────────
+    try:
+        raw      = html_scraper.get_gmarket_products()
+        filtered = [p for p in raw if _passes_filter(p)]
+        for p in filtered:
+            combined[p["product_id"]] = p
+        parts.append(f"G마켓:{len(filtered)}")
+    except Exception as e:
+        logger.error("G마켓 수집 실패 (다음 주기 재시도): %s", e, exc_info=True)
+        parts.append("G마켓:오류")
+
+    # ── SSG ───────────────────────────────────────────────────────────────────
+    try:
+        raw      = html_scraper.get_ssg_products()
+        filtered = [p for p in raw if _passes_filter(p)]
+        for p in filtered:
+            combined[p["product_id"]] = p
+        parts.append(f"SSG:{len(filtered)}")
+    except Exception as e:
+        logger.error("SSG 수집 실패 (다음 주기 재시도): %s", e, exc_info=True)
+        parts.append("SSG:오류")
+
+    # 11번가: JS 렌더링 전용(AJAX totalCount=0) — 미지원
+
     return list(combined.values()), " | ".join(parts)
 
 
