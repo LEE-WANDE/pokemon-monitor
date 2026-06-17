@@ -49,6 +49,7 @@ def _fetch(url: str, referer: str = "") -> BeautifulSoup:
 
 _CM_BASE = "https://www.cardmania2021.com"
 _CM_LIST = f"{_CM_BASE}/goods/goods_list.php?cateCd=001001&sort=&pageNum=40"
+_CM_HOME = _CM_BASE + "/"  # 홈페이지 베스트/신상 섹션
 
 
 def _parse_cardmania_page(soup: BeautifulSoup) -> list[dict]:
@@ -93,8 +94,9 @@ def _parse_cardmania_page(soup: BeautifulSoup) -> list[dict]:
 
 def get_cardmania_products() -> list[dict]:
     all_products: list[dict] = []
-    page = 1
 
+    # 1. 카테고리 페이지 (cateCd=001001) — 페이지네이션 포함
+    page = 1
     while True:
         url  = _CM_LIST if page == 1 else f"{_CM_LIST}&page={page}"
         soup = _fetch(url, _CM_BASE + "/")
@@ -104,7 +106,6 @@ def get_cardmania_products() -> list[dict]:
             break
         all_products.extend(items)
 
-        # 현재 페이지 이후 숫자 링크가 있으면 계속, 없으면 종료
         page_links = soup.select("div.pagination a[href]")
         next_pages = [
             int(a.get_text(strip=True))
@@ -117,6 +118,17 @@ def get_cardmania_products() -> list[dict]:
         page += 1
         time.sleep(random.uniform(1.0, 2.0))
 
+    # 2. 홈페이지 베스트/신상 섹션 — 카테고리 페이지에 없는 신규 상품 포착
+    try:
+        time.sleep(random.uniform(0.5, 1.0))
+        soup_home  = _fetch(_CM_HOME, _CM_BASE + "/")
+        home_items = _parse_cardmania_page(soup_home)
+        all_products.extend(home_items)
+        logger.info("[카드마니아] 홈페이지 추가 수집: %d개", len(home_items))
+    except Exception as e:
+        logger.warning("[카드마니아] 홈페이지 수집 실패 (계속 진행): %s", e)
+
+    # product_id(cardmania_{goodsNo}) 기준 중복 제거
     seen = {p["product_id"]: p for p in all_products}
     logger.info("[카드마니아] 수집 완료: %d개", len(seen))
     return list(seen.values())
