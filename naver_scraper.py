@@ -10,7 +10,7 @@ import logging
 import random
 import re
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from curl_cffi import requests as creq
 
@@ -150,7 +150,7 @@ def _find_products_section(state: dict) -> tuple[list, dict]:
     return [], {}
 
 
-def _parse_product(item: dict, site_name: str, channel_base_url: str) -> dict | None:
+def _parse_product(item: dict, site_name: str, channel_base_url: str, channel_path: str) -> dict | None:
     product_no = item.get("productNo")
     if not product_no:
         return None
@@ -172,9 +172,11 @@ def _parse_product(item: dict, site_name: str, channel_base_url: str) -> dict | 
 
     channel     = item.get("channel") or {}
     channel_uid = channel.get("channelUid", "")
+    # channel_path는 page_url에서 추출한 스토어 경로(예: "pokemon", "pokemontcg")
+    # channelUid는 내부 해시값이라 URL에 사용하면 404 발생
     product_url = (
-        f"{channel_base_url}/{channel_uid}/products/{product_no}"
-        if channel_uid else ""
+        f"{channel_base_url}/{channel_path}/products/{product_no}"
+        if channel_path else ""
     )
 
     return {
@@ -204,6 +206,12 @@ def get_naver_products(
     all_products: list[dict] = []
     page = 1
 
+    # page_url 경로 첫 세그먼트를 스토어 식별자로 사용
+    # 예: brand.naver.com/pokemon/category/... → "pokemon"
+    #     smartstore.naver.com/pokemontcg/category/... → "pokemontcg"
+    _path_parts  = urlparse(page_url).path.strip("/").split("/")
+    channel_path = _path_parts[0] if _path_parts else ""
+
     while True:
         url = (
             f"{page_url}?q={quote(search_query)}&cp={page}"
@@ -225,7 +233,7 @@ def get_naver_products(
             break
 
         for item in products_raw:
-            parsed = _parse_product(item, site_name, channel_base_url)
+            parsed = _parse_product(item, site_name, channel_base_url, channel_path)
             if parsed:
                 all_products.append(parsed)
 

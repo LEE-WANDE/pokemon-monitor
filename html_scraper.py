@@ -156,7 +156,13 @@ def _parse_tcgbox_page(items) -> list[dict]:
         status = "품절" if soldout_img else "판매중"
 
         href_el = item.select_one("div.name a")
-        url = (_TB_BASE + href_el["href"]) if href_el else ""
+        if href_el:
+            raw_href = href_el.get("href", "")
+            # /product/{slug}/{id}/category/.../display/.../ → /product/{slug}/{id}/
+            _m = re.match(r"(/product/[^/]+/\d+)", raw_href)
+            url = _TB_BASE + (_m.group(1) + "/" if _m else raw_href)
+        else:
+            url = ""
 
         img    = item.select_one(f"img#eListPrdImage{pid}_1")
         img_src = img.get("src", "") if img else ""
