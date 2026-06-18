@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import threading
 from config import DB_PATH
@@ -14,6 +15,10 @@ def _connect():
 
 
 def init_db():
+    # /data 같은 볼륨 경로는 앱이 직접 만들어야 함
+    db_dir = os.path.dirname(os.path.abspath(DB_PATH))
+    os.makedirs(db_dir, exist_ok=True)
+
     with _connect() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS products (
