@@ -749,6 +749,16 @@
     "status": "판매중",
     "url": "https://item.gmarket.co.kr/Item?goodsCode=4788006977"
   },
+  "naver_91186420542": {
+    "image_url": "https://shopping-phinf.pstatic.net/main_9118642/91186420542.jpg",
+    "name": "포켓몬카드 MEGA 확장팩 어비스아이 1상자 30팩",
+    "price": "45,000원",
+    "price_int": 45000,
+    "product_id": "naver_91186420542",
+    "site_name": "네이버 스마트스토어(토이벤져스)",
+    "status": "판매중",
+    "url": "https://smartstore.naver.com/main/products/13641909833"
+  },
   "tcgbox_10372": {
     "image_url": "https://tcgbox.co.kr/web/product/medium/20191206/52b2fc9685e254353ff4973cb8707429.jpg",
     "name": "썬&문 하이클래스팩 TAG TEAM GX 태그올스타즈",
