@@ -30,6 +30,7 @@ import math
 import os
 import re
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -42,12 +43,29 @@ logging.basicConfig(
 logger = logging.getLogger("monitor")
 
 STATE_PATH = Path(__file__).parent / "data" / "state.json"
+DOCS_PATH  = Path(__file__).parent / "docs" / "index.html"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 NAVER_CLIENT_ID = os.environ.get("NAVER_CLIENT_ID", "")
 NAVER_CLIENT_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "")
 
 PRICE_MIN = 20_000
 PRICE_MAX = 45_000
+
+_CHECK_INTERVAL_MINUTES = 20
+_EVENT_BADGE_WINDOW = timedelta(hours=24)
+_ACTIONS_URL = "https://github.com/LEE-WANDE/pokemon-monitor/actions/workflows/monitor.yml"
+
+_SITE_COLORS = {
+    "포켓몬스토어":                        "#0a1e3f",
+    "카드마니아":                          "#dc2626",
+    "TCG박스":                             "#7c3aed",
+    "옥션":                                "#0d9488",
+    "G마켓":                               "#f97316",
+    "SSG":                                 "#2563eb",
+    "네이버 스마트스토어(플러스디스트리뷰션)": "#16a34a",
+    "네이버 스마트스토어(토이벤져스)":        "#16a34a",
+    "네이버 스마트스토어(문구달)":            "#16a34a",
+}
 
 _HEADERS = {
     "User-Agent": (
@@ -670,6 +688,323 @@ def save_state(state: dict[str, dict]) -> None:
     )
 
 
+# ── GitHub Pages 대시보드 생성 ─────────────────────────────────────────────────
+
+def _is_recent_event(event_at: str | None) -> bool:
+    if not event_at:
+        return False
+    try:
+        dt = datetime.fromisoformat(event_at)
+    except ValueError:
+        return False
+    return (datetime.now(timezone.utc) - dt) < _EVENT_BADGE_WINDOW
+
+
+def generate_dashboard(state: dict[str, dict], last_checked_iso: str, next_check_iso: str) -> str:
+    products = list(state.values())
+    products.sort(key=lambda p: (
+        0 if (p.get("last_event") in ("new", "restocked") and _is_recent_event(p.get("event_at"))) else 1,
+        0 if p.get("status") == "판매중" else 1,
+        p.get("site_name", ""),
+        -(p.get("price_int") or 0),
+    ))
+
+    slim = [
+        {
+            "name":       p.get("name", ""),
+            "price":      p.get("price", ""),
+            "status":     p.get("status", "판매중"),
+            "url":        p.get("url", ""),
+            "image_url":  p.get("image_url", ""),
+            "site_name":  p.get("site_name", ""),
+            "last_event": p.get("last_event"),
+            "event_at":   p.get("event_at"),
+        }
+        for p in products
+    ]
+
+    html_out = _DASHBOARD_TEMPLATE
+    html_out = html_out.replace("__PRODUCTS_JSON__", json.dumps(slim, ensure_ascii=False))
+    html_out = html_out.replace("__SITE_COLORS_JSON__", json.dumps(_SITE_COLORS, ensure_ascii=False))
+    html_out = html_out.replace("__LAST_CHECKED__", last_checked_iso or "")
+    html_out = html_out.replace("__NEXT_CHECK__", next_check_iso or "")
+    html_out = html_out.replace("__ACTIONS_URL__", _ACTIONS_URL)
+    return html_out
+
+
+_DASHBOARD_TEMPLATE = r"""<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>포켓몬 카드 모니터</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+    background: #f4f4f6;
+    color: #1a1a1a;
+  }
+  header {
+    background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+    color: #fff;
+    padding: 32px 24px 28px;
+  }
+  .header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 1.5rem; font-weight: 700; }
+  .live-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.12);
+    padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+  .subtitle { margin-top: 6px; font-size: 0.82rem; color: rgba(255,255,255,0.65); }
+  .check-btn {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.28);
+    color: #fff; padding: 10px 18px; border-radius: 10px; font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .check-btn:hover { background: rgba(255,255,255,0.24); }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 22px; }
+  .summary-card {
+    background: #fff; border-radius: 14px; padding: 16px 8px; text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .summary-card .num { font-size: 1.5rem; font-weight: 700; }
+  .summary-card .label { font-size: 0.75rem; color: #6b7280; margin-top: 4px; }
+  .summary-card.total .num      { color: #24243e; }
+  .summary-card.active .num     { color: #16a34a; }
+  .summary-card.new .num        { color: #dc2626; }
+  .summary-card.restocked .num  { color: #2563eb; }
+  .summary-card.soldout .num    { color: #9ca3af; }
+
+  .filters { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .filter-btn {
+    border: 1px solid #d1d5db; background: #fff; padding: 8px 16px; border-radius: 999px;
+    font-size: 0.82rem; font-weight: 500; cursor: pointer; color: #374151; transition: all .15s;
+  }
+  .filter-btn.active { background: #24243e; color: #fff; border-color: #24243e; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
+  .card {
+    background: #fff; border-radius: 14px; overflow: hidden; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: relative; transition: transform .15s, box-shadow .15s;
+    display: flex; flex-direction: column;
+  }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,0.12); }
+  .card.soldout { opacity: 0.5; }
+  .thumb { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: #eee; display: block; }
+  .thumb.placeholder { display: flex; align-items: center; justify-content: center; font-size: 2.2rem; color: #ccc; }
+  .site-tag {
+    position: absolute; top: 8px; left: 8px; font-size: 0.66rem; font-weight: 700; color: #fff;
+    padding: 3px 8px; border-radius: 6px; z-index: 2; max-width: 75%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .badge {
+    position: absolute; top: 8px; right: 8px; font-size: 0.66rem; font-weight: 800; color: #fff;
+    padding: 3px 8px; border-radius: 6px; z-index: 2;
+  }
+  .badge.new        { background: #dc2626; }
+  .badge.restocked  { background: #2563eb; }
+  .card-body { padding: 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .card-name { font-size: 0.85rem; font-weight: 600; line-height: 1.35; min-height: 2.3em; }
+  .card-price { font-size: 1rem; font-weight: 700; color: #111; }
+  .status-pill {
+    font-size: 0.7rem; font-weight: 700; padding: 2px 9px; border-radius: 999px; width: fit-content;
+  }
+  .status-pill.available { background: #dcfce7; color: #166534; }
+  .status-pill.soldout    { background: #e5e7eb; color: #4b5563; }
+
+  footer { text-align: center; padding: 28px 16px 44px; color: #6b7280; font-size: 0.82rem; }
+  .footer-live { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .footer-dot { width: 8px; height: 8px; border-radius: 50%; background: #16a34a; animation: pulse 1.6s infinite; }
+  .empty { text-align: center; padding: 60px 0; color: #999; }
+
+  @media (max-width: 720px) {
+    .summary { grid-template-columns: repeat(2, 1fr); }
+    h1 { font-size: 1.25rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div>
+      <div class="title-row">
+        <h1>🎴 포켓몬 카드 모니터</h1>
+        <span class="live-badge"><span class="live-dot"></span>LIVE</span>
+      </div>
+      <div class="subtitle" id="lastChecked">마지막 체크: -</div>
+    </div>
+    <a class="check-btn" href="__ACTIONS_URL__" target="_blank" rel="noopener">🔄 지금 체크</a>
+  </div>
+</header>
+
+<main>
+  <div class="summary">
+    <div class="summary-card total"><div class="num" id="cntTotal">0</div><div class="label">전체</div></div>
+    <div class="summary-card active"><div class="num" id="cntActive">0</div><div class="label">판매중</div></div>
+    <div class="summary-card new"><div class="num" id="cntNew">0</div><div class="label">신규</div></div>
+    <div class="summary-card restocked"><div class="num" id="cntRestocked">0</div><div class="label">재입고</div></div>
+    <div class="summary-card soldout"><div class="num" id="cntSoldout">0</div><div class="label">품절</div></div>
+  </div>
+
+  <div class="filters">
+    <button class="filter-btn active" data-filter="all">전체</button>
+    <button class="filter-btn" data-filter="new">신규</button>
+    <button class="filter-btn" data-filter="restocked">재입고</button>
+    <button class="filter-btn" data-filter="available">판매중</button>
+    <button class="filter-btn" data-filter="soldout">품절</button>
+  </div>
+
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="emptyMsg" style="display:none;">조건에 맞는 상품이 없습니다.</div>
+</main>
+
+<footer>
+  <div class="footer-live"><span class="footer-dot"></span>모니터링 중 · 20분마다 자동 체크</div>
+  <div id="countdown">다음 체크까지 계산 중…</div>
+</footer>
+
+<script>
+const PRODUCTS = __PRODUCTS_JSON__;
+const SITE_COLORS = __SITE_COLORS_JSON__;
+const LAST_CHECKED = "__LAST_CHECKED__";
+const NEXT_CHECK = "__NEXT_CHECK__";
+const EVENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function isRecent(iso) {
+  if (!iso) return false;
+  return (Date.now() - new Date(iso).getTime()) < EVENT_WINDOW_MS;
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s || '';
+  return div.innerHTML;
+}
+
+function render(filter) {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  let shown = 0;
+
+  for (const p of PRODUCTS) {
+    const isNew = p.last_event === 'new' && isRecent(p.event_at);
+    const isRestocked = p.last_event === 'restocked' && isRecent(p.event_at);
+    const isSoldout = p.status === '품절';
+
+    if (filter === 'new' && !isNew) continue;
+    if (filter === 'restocked' && !isRestocked) continue;
+    if (filter === 'available' && isSoldout) continue;
+    if (filter === 'soldout' && !isSoldout) continue;
+
+    shown++;
+    const card = document.createElement('div');
+    card.className = 'card' + (isSoldout ? ' soldout' : '');
+    if (p.url) {
+      card.addEventListener('click', () => window.open(p.url, '_blank', 'noopener'));
+    }
+
+    const color = SITE_COLORS[p.site_name] || '#475569';
+    const badge = isNew
+      ? '<div class="badge new">NEW</div>'
+      : (isRestocked ? '<div class="badge restocked">재입고</div>' : '');
+    const img = p.image_url
+      ? '<img class="thumb" src="' + p.image_url + '" loading="lazy" onerror="this.outerHTML=\'<div class=&quot;thumb placeholder&quot;>🎴</div>\'">'
+      : '<div class="thumb placeholder">🎴</div>';
+
+    card.innerHTML =
+      '<div class="site-tag" style="background:' + color + '">' + escapeHtml(p.site_name) + '</div>' +
+      badge + img +
+      '<div class="card-body">' +
+        '<div class="card-name">' + escapeHtml(p.name) + '</div>' +
+        '<div class="card-price">' + escapeHtml(p.price) + '</div>' +
+        '<div class="status-pill ' + (isSoldout ? 'soldout' : 'available') + '">' + escapeHtml(p.status) + '</div>' +
+      '</div>';
+
+    grid.appendChild(card);
+  }
+
+  document.getElementById('emptyMsg').style.display = shown === 0 ? 'block' : 'none';
+}
+
+function updateSummary() {
+  const total = PRODUCTS.length;
+  const soldout = PRODUCTS.filter(p => p.status === '품절').length;
+  const active = total - soldout;
+  const newCount = PRODUCTS.filter(p => p.last_event === 'new' && isRecent(p.event_at)).length;
+  const restockedCount = PRODUCTS.filter(p => p.last_event === 'restocked' && isRecent(p.event_at)).length;
+
+  document.getElementById('cntTotal').textContent = total;
+  document.getElementById('cntActive').textContent = active;
+  document.getElementById('cntNew').textContent = newCount;
+  document.getElementById('cntRestocked').textContent = restockedCount;
+  document.getElementById('cntSoldout').textContent = soldout;
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    render(btn.dataset.filter);
+  });
+});
+
+function fmtDateTime(iso) {
+  if (!iso) return '-';
+  try {
+    return new Date(iso).toLocaleString('ko-KR', { hour12: false });
+  } catch (e) {
+    return '-';
+  }
+}
+
+document.getElementById('lastChecked').textContent = '마지막 체크: ' + fmtDateTime(LAST_CHECKED);
+
+function updateCountdown() {
+  const el = document.getElementById('countdown');
+  if (!NEXT_CHECK) { el.textContent = ''; return; }
+  const diff = new Date(NEXT_CHECK).getTime() - Date.now();
+  if (diff <= 0) {
+    el.textContent = '곧 체크 예정 (GitHub Actions 대기열 상황에 따라 지연될 수 있음)';
+    return;
+  }
+  const m = Math.floor(diff / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  el.textContent = '다음 체크까지 약 ' + m + '분 ' + s + '초';
+}
+
+updateSummary();
+render('all');
+updateCountdown();
+setInterval(updateCountdown, 1000);
+setTimeout(() => location.reload(), 5 * 60 * 1000);
+</script>
+</body>
+</html>
+"""
+
+
 # ── 디스코드 알림 ─────────────────────────────────────────────────────────────
 
 def send_discord(product: dict, badge: str) -> None:
@@ -726,23 +1061,42 @@ def main() -> None:
         logger.warning("수집된 상품이 없습니다 (%s). 상태를 변경하지 않고 종료합니다.", summary)
         return
 
+    now_iso = datetime.now(timezone.utc).isoformat()
+
     new_count = restocked_count = 0
     for product_id, product in current.items():
         prev = previous.get(product_id)
         if prev is None:
+            product["first_seen"] = now_iso
             if not is_first_run:
+                product["last_event"] = "new"
+                product["event_at"] = now_iso
                 send_discord(product, "new")
                 new_count += 1
+            else:
+                product["last_event"] = None
+                product["event_at"] = None
         else:
+            product["first_seen"] = prev.get("first_seen", now_iso)
             was_sold_out  = prev.get("status") == "품절"
             now_available = product.get("status") == "판매중"
             if was_sold_out and now_available:
+                product["last_event"] = "restocked"
+                product["event_at"] = now_iso
                 send_discord(product, "restocked")
                 restocked_count += 1
+            else:
+                # 이벤트 없음 — 이전 신규/재입고 배지를 24시간 표시 동안 유지
+                product["last_event"] = prev.get("last_event")
+                product["event_at"] = prev.get("event_at")
 
     merged = dict(previous)
     merged.update(current)
     save_state(merged)
+
+    next_check_iso = (datetime.now(timezone.utc) + timedelta(minutes=_CHECK_INTERVAL_MINUTES)).isoformat()
+    DOCS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DOCS_PATH.write_text(generate_dashboard(merged, now_iso, next_check_iso), encoding="utf-8")
 
     if is_first_run:
         logger.info("초기 로드 완료: %d개 (%s)", len(current), summary)
