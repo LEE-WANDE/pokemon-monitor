@@ -42,8 +42,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("monitor")
 
-STATE_PATH = Path(__file__).parent / "data" / "state.json"
-DOCS_PATH  = Path(__file__).parent / "docs" / "index.html"
+STATE_PATH   = Path(__file__).parent / "data" / "state.json"
+HISTORY_PATH = Path(__file__).parent / "data" / "history.json"
+DOCS_PATH    = Path(__file__).parent / "docs" / "index.html"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 NAVER_CLIENT_ID = os.environ.get("NAVER_CLIENT_ID", "")
 NAVER_CLIENT_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "")
@@ -688,6 +689,26 @@ def save_state(state: dict[str, dict]) -> None:
     )
 
 
+# ── 상태 변화 이력 ────────────────────────────────────────────────────────────
+
+def load_history() -> list[dict]:
+    if not HISTORY_PATH.exists():
+        return []
+    try:
+        return json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("history.json 로드 실패, 빈 이력으로 시작: %s", e)
+        return []
+
+
+def save_history(history: list[dict]) -> None:
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    HISTORY_PATH.write_text(
+        json.dumps(history, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 # ── GitHub Pages 대시보드 생성 ─────────────────────────────────────────────────
 
 def _is_recent_event(event_at: str | None) -> bool:
@@ -1054,6 +1075,7 @@ def send_discord(product: dict, badge: str) -> None:
 def main() -> None:
     previous = load_state()
     is_first_run = len(previous) == 0
+    history = load_history()
 
     current, summary = collect_all()
 
@@ -1078,8 +1100,21 @@ def main() -> None:
                 product["event_at"] = None
         else:
             product["first_seen"] = prev.get("first_seen", now_iso)
-            was_sold_out  = prev.get("status") == "품절"
-            now_available = product.get("status") == "판매중"
+            prev_status = prev.get("status")
+            cur_status  = product.get("status")
+
+            if prev_status != cur_status:
+                history.append({
+                    "product_id":  product_id,
+                    "site_name":   product.get("site_name", ""),
+                    "name":        product.get("name", ""),
+                    "from_status": prev_status,
+                    "to_status":   cur_status,
+                    "changed_at":  now_iso,
+                })
+
+            was_sold_out  = prev_status == "품절"
+            now_available = cur_status == "판매중"
             if was_sold_out and now_available:
                 product["last_event"] = "restocked"
                 product["event_at"] = now_iso
@@ -1093,6 +1128,7 @@ def main() -> None:
     merged = dict(previous)
     merged.update(current)
     save_state(merged)
+    save_history(history)
 
     next_check_iso = (datetime.now(timezone.utc) + timedelta(minutes=_CHECK_INTERVAL_MINUTES)).isoformat()
     DOCS_PATH.parent.mkdir(parents=True, exist_ok=True)
