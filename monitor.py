@@ -9,8 +9,8 @@
   5. G마켓          (HTML — onclick setItemHistory 파싱)
   6. SSG            (Next.js __NEXT_DATA__ JSON)
   7. 네이버 스마트스토어 × 3 (플러스디스트리뷰션 / 토이벤져스 / 문구달)
-     — curl_cffi 브라우저 지문 모방 + __PRELOADED_STATE__ 파싱
-     — 429 발생 시 예외를 올려 상위 collect_all()에서 로그만 남기고 다음 주기 재시도
+     — 네이버 쇼핑 검색 API(openapi.naver.com)로 키워드 검색 후 mallName으로 필터링
+     — smartstore.naver.com 직접 크롤링은 로그인 리다이렉트로 차단되어 API 방식으로 전환
 
 필터:
   - "확장팩" or "하이클래스팩" 포함
@@ -28,15 +28,12 @@ import json
 import logging
 import math
 import os
-import random
 import re
 import time
 from pathlib import Path
-from urllib.parse import quote, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from curl_cffi import requests as creq
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +43,8 @@ logger = logging.getLogger("monitor")
 
 STATE_PATH = Path(__file__).parent / "data" / "state.json"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
+NAVER_CLIENT_ID = os.environ.get("NAVER_CLIENT_ID", "")
+NAVER_CLIENT_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "")
 
 PRICE_MIN = 20_000
 PRICE_MAX = 45_000
@@ -497,260 +496,113 @@ def get_ssg_products() -> list[dict]:
     return list(seen.values())
 
 
-# ── 7. 네이버 스마트스토어 ────────────────────────────────────────────────────
-# 방식: curl_cffi 브라우저 TLS 지문 모방 → HTML 내 window.__PRELOADED_STATE__ 파싱
-# 429 발생 시: 지수 백오프 최대 3회 재시도 후 예외 발생 → collect_all()에서 로그만 남기고 다음 주기 재시도
+# ── 7. 네이버 스마트스토어 (쇼핑 검색 API) ────────────────────────────────────
+# 방식: 네이버 쇼핑 검색 API(openapi.naver.com/v1/search/shop.json)로
+#       스토어별 검색어를 검색한 뒤, 응답의 mallName이 해당 스토어와 일치하는
+#       상품만 추려낸다. smartstore.naver.com 직접 크롤링은 로그인 리다이렉트로
+#       차단되어(도메인 전체에 걸린 봇 차단으로 추정) 검색 API로 전환.
+#
+# 제한사항:
+#   - 검색 API는 "네이버쇼핑에 노출된" 상품만 반환하므로 스토어의 전체 카테고리
+#     재고와 100% 일치하지 않을 수 있음 (검색 노출 여부에 좌우됨)
+#   - 품절 여부 필드를 제공하지 않아 모든 상품을 판매중으로 간주함
+#     → 재입고 감지는 사실상 불가, "신규 노출 감지"로 동작
 
-_NAVER_SESS           = creq.Session(impersonate="chrome120")
-_NAVER_SESSION_WARMED = False
+_NAVER_API_URL = "https://openapi.naver.com/v1/search/shop.json"
+_NAVER_PAGES_TO_SCAN = 3   # display=100 기준 최대 300개까지 검색 결과 스캔
+_NAVER_TAG_RE = re.compile(r"</?b>")
 
-_NAVER_PAGE_SIZE      = 40
-_NAVER_SOLD_OUT       = {"OUTOFSTOCK", "SOLD_OUT", "SUSPENSION", "CLOSE", "DELETED"}
-_NAVER_STATE_KEYS     = ["categoryProducts", "searchProducts", "productSearch", "productList"]
-
-_NAVER_MAX_RETRIES  = 3
-_NAVER_RETRY_BASE_S = 8
-
-_NAVER_SITES = [
+# mall_name 검증 결과 (2026-07-25):
+#   - 토이 벤져스: 검색 결과에 mallName="토이 벤져스"(공백 포함)로 실제 확인됨
+#   - 플러스디스트리뷰션 / 문구달: "포켓몬 카드 확장팩"/"포켓몬카드 확장팩" 검색 결과를
+#     sim·date 정렬 + API 최대 조회 한도(1,000건)까지 스캔해도 두 스토어의 상품이
+#     전혀 노출되지 않음 → mallName 미확인 (아래는 상호명 그대로 넣어둔 추정값).
+#     스토어가 가격비교 노출을 켜지 않았거나 포켓몬 카드 상품을 아직 등록하지
+#     않았을 가능성이 큼. 노출되면 다음 실행부터 자동으로 잡힘.
+_NAVER_STORES = [
     {
-        "site_name":        "네이버 스마트스토어(플러스디스트리뷰션)",
-        "page_url":         "https://smartstore.naver.com/plusdistribution/category/915dea2708c8472aac33f5a849ca7416",
-        "channel_base_url": "https://smartstore.naver.com",
-        "search_query":     "",
+        "site_name": "네이버 스마트스토어(플러스디스트리뷰션)",
+        "mall_name": "플러스디스트리뷰션",
+        "query":     "포켓몬 카드 확장팩",
     },
     {
-        "site_name":        "네이버 스마트스토어(토이벤져스)",
-        "page_url":         "https://smartstore.naver.com/toyvengers/category/50000343",
-        "channel_base_url": "https://smartstore.naver.com",
-        "search_query":     "",
+        "site_name": "네이버 스마트스토어(토이벤져스)",
+        "mall_name": "토이 벤져스",  # 실제 mallName은 공백 포함 (API 조회로 확인)
+        "query":     "포켓몬 카드 확장팩",
     },
     {
-        "site_name":        "네이버 스마트스토어(문구달)",
-        "page_url":         "https://smartstore.naver.com/dc-moongu/category/50000343",
-        "channel_base_url": "https://smartstore.naver.com",
-        "search_query":     "",
+        "site_name": "네이버 스마트스토어(문구달)",
+        "mall_name": "문구달",
+        "query":     "포켓몬 카드 확장팩",
     },
 ]
 
 
-def _naver_warm_up() -> None:
-    global _NAVER_SESSION_WARMED
-    if _NAVER_SESSION_WARMED:
-        return
-    _NAVER_SESSION_WARMED = True  # 먼저 True로 설정해 재진입 방지
-    try:
-        _NAVER_SESS.get(
-            "https://www.naver.com/",
-            headers={"Accept": "text/html,*/*;q=0.8", "Accept-Language": "ko-KR,ko;q=0.9"},
-            timeout=10,
-        )
-        time.sleep(random.uniform(0.8, 1.5))
-        _NAVER_SESS.get(
-            "https://shopping.naver.com/",
-            headers={"Accept": "text/html,*/*;q=0.8", "Accept-Language": "ko-KR,ko;q=0.9"},
-            timeout=10,
-        )
-        logger.info("[네이버] 세션 워밍업 완료")
-    except Exception as e:
-        logger.warning("[네이버] 세션 워밍업 실패 (계속 진행): %s", e)
+def _naver_api_search(query: str, start: int, display: int = 100) -> list[dict]:
+    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+        raise RuntimeError("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 미설정")
 
-
-def _naver_browser_headers(referer: str) -> dict:
-    return {
-        "Accept": (
-            "text/html,application/xhtml+xml,application/xml;"
-            "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,"
-            "application/signed-exchange;v=b3;q=0.7"
-        ),
-        "Accept-Encoding":           "gzip, deflate, br",
-        "Accept-Language":           "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Cache-Control":             "max-age=0",
-        "Referer":                   referer,
-        "Sec-Ch-Ua":                 '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        "Sec-Ch-Ua-Mobile":          "?0",
-        "Sec-Ch-Ua-Platform":        '"Windows"',
-        "Sec-Fetch-Dest":            "document",
-        "Sec-Fetch-Mode":            "navigate",
-        "Sec-Fetch-Site":            "same-origin",
-        "Sec-Fetch-User":            "?1",
-        "Upgrade-Insecure-Requests": "1",
+    headers = {
+        "X-Naver-Client-Id":     NAVER_CLIENT_ID,
+        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
     }
+    params = {"query": query, "display": display, "start": start, "sort": "sim"}
+    r = requests.get(_NAVER_API_URL, headers=headers, params=params, timeout=15)
+    r.raise_for_status()
+    return r.json().get("items", [])
 
 
-def _naver_fetch_html(url: str, referer: str) -> str:
-    """브라우저 헤더로 HTML 취득. 429 시 지수 백오프 재시도, 초과 시 예외를 올림."""
-    _naver_warm_up()
-    headers = _naver_browser_headers(referer)
-
-    for attempt in range(_NAVER_MAX_RETRIES):
-        try:
-            r = _NAVER_SESS.get(url, headers=headers, timeout=25)
-
-            if r.status_code == 429:
-                wait = _NAVER_RETRY_BASE_S * (2 ** attempt) + random.uniform(2, 5)
-                logger.warning(
-                    "[네이버] 429 차단 — %d초 후 재시도 (%d/%d): %s",
-                    round(wait), attempt + 1, _NAVER_MAX_RETRIES, url,
-                )
-                time.sleep(wait)
-                continue
-
-            r.raise_for_status()
-            return r.text
-
-        except creq.exceptions.RequestsError as e:
-            if attempt < _NAVER_MAX_RETRIES - 1:
-                wait = _NAVER_RETRY_BASE_S * (2 ** attempt)
-                logger.warning("[네이버] 요청 오류 %s — %ds 후 재시도", e, wait)
-                time.sleep(wait)
-            else:
-                raise
-
-    raise RuntimeError(f"[네이버] 429 최대 재시도 초과: {url}")
-
-
-def _naver_extract_state(page_html: str) -> dict:
-    m = re.search(r"window\.__PRELOADED_STATE__=(\{.*)", page_html)
-    if not m:
-        return {}
-    raw = m.group(1)
-    end = raw.find("</script>")
-    if end > 0:
-        raw = raw[:end]
-    raw = re.sub(r"\bundefined\b", "null", raw)
-    raw = re.sub(r"\bInfinity\b",  "null", raw)
-    raw = re.sub(r"\bNaN\b",       "null", raw)
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as e:
-        logger.warning("[네이버] __PRELOADED_STATE__ JSON 파싱 실패: %s", e)
-        return {}
-
-
-def _naver_find_products_section(state: dict) -> tuple[list, dict]:
-    """state 에서 simpleProducts 리스트와 메타데이터 반환.
-    카테고리: state[key].simpleProducts
-    검색:     state[key][variant].simpleProducts  (keywordSearch.A 구조)
-    """
-    for key in _NAVER_STATE_KEYS + ["keywordSearch"]:
-        section = state.get(key)
-        if not isinstance(section, dict):
-            continue
-        products = section.get("simpleProducts", [])
-        if isinstance(products, list) and products:
-            return products, section
-        for variant_val in section.values():
-            if not isinstance(variant_val, dict):
-                continue
-            products = variant_val.get("simpleProducts", [])
-            if isinstance(products, list) and products:
-                return products, variant_val
-    return [], {}
-
-
-def _naver_parse_product(item: dict, site_name: str, channel_base_url: str, channel_path: str) -> dict | None:
-    product_no = item.get("productNo")
-    if not product_no:
+def _naver_parse_item(item: dict, site_name: str) -> dict | None:
+    product_id = item.get("productId")
+    if not product_id:
         return None
 
-    name = (item.get("name") or item.get("dispName") or "").strip()
+    name = html_lib.unescape(_NAVER_TAG_RE.sub("", item.get("title", ""))).strip()
     if not name:
         return None
 
-    price_raw = item.get("salePrice") or 0
     try:
-        price_int = int(price_raw)
+        price_int = int(item.get("lprice") or 0)
     except (TypeError, ValueError):
         price_int = 0
 
-    status_type = item.get("productStatusType", "")
-    status      = "품절" if status_type in _NAVER_SOLD_OUT else "판매중"
-
-    channel     = item.get("channel") or {}
-    channel_uid = channel.get("channelUid", "")
-    # channel_path는 page_url에서 추출한 스토어 경로(예: "toyvengers")
-    # channelUid는 내부 해시값이라 URL에 사용하면 404 발생
-    product_url = (
-        f"{channel_base_url}/{channel_path}/products/{product_no}"
-        if channel_path else ""
-    )
-
     return {
-        "product_id": f"naver_{channel_uid}_{product_no}",
+        "product_id": f"naver_{product_id}",
         "name":       name,
         "price":      f"{price_int:,}원",
         "price_int":  price_int,
-        "status":     status,
-        "url":        product_url,
-        "image_url":  item.get("representativeImageUrl") or "",
+        # 쇼핑 검색 API는 품절 여부를 제공하지 않음 — 노출되면 판매중으로 간주
+        "status":     "판매중",
+        "url":        item.get("link", ""),
+        "image_url":  item.get("image", ""),
         "site_name":  site_name,
     }
 
 
-def _get_naver_site_products(
-    site_name: str,
-    page_url: str,
-    channel_base_url: str,
-    search_query: str = "",
-) -> list[dict]:
-    """네이버 스토어 상품 목록 반환. 429 등 오류는 예외로 올려 호출 측에서 처리."""
-    all_products: list[dict] = []
-    page = 1
-
-    # page_url 경로 첫 세그먼트를 스토어 식별자로 사용
-    # 예: smartstore.naver.com/toyvengers/category/... → "toyvengers"
-    _path_parts  = urlparse(page_url).path.strip("/").split("/")
-    channel_path = _path_parts[0] if _path_parts else ""
-
-    while True:
-        url = (
-            f"{page_url}?q={quote(search_query)}&cp={page}"
-            if search_query
-            else f"{page_url}?cp={page}"
-        )
-
-        page_html = _naver_fetch_html(url, page_url)  # 실패 시 예외 발생
-
-        state = _naver_extract_state(page_html)
-        if not state:
-            logger.warning("[%s] __PRELOADED_STATE__ 없음", site_name)
-            break
-
-        products_raw, section_meta = _naver_find_products_section(state)
-        if not products_raw:
-            break
-
-        for item in products_raw:
-            parsed = _naver_parse_product(item, site_name, channel_base_url, channel_path)
-            if parsed:
-                all_products.append(parsed)
-
-        total     = section_meta.get("totalCount") or 0
-        page_size = section_meta.get("pageSize") or _NAVER_PAGE_SIZE
-        if total <= page * page_size:
-            break
-
-        page += 1
-        time.sleep(random.uniform(2, 4))  # 페이지 간 딜레이
-
-    seen: dict[str, dict] = {}
-    for p in all_products:
-        seen[p["product_id"]] = p
-
-    logger.info("[%s] 수집 완료: %d개", site_name, len(seen))
-    return list(seen.values())
-
-
-def _make_naver_fetch_fn(cfg: dict, delay_before: bool):
+def _make_naver_fetch_fn(cfg: dict):
     def _fetch_fn() -> list[dict]:
-        if delay_before:
-            time.sleep(random.uniform(4, 8))  # 사이트 간 딜레이 — 네이버 레이트리밋 완화
-        return _get_naver_site_products(
-            site_name=cfg["site_name"],
-            page_url=cfg["page_url"],
-            channel_base_url=cfg["channel_base_url"],
-            search_query=cfg["search_query"],
-        )
+        site_name = cfg["site_name"]
+        mall_name = cfg["mall_name"]
+        query     = cfg["query"]
+
+        matched: dict[str, dict] = {}
+        for i in range(_NAVER_PAGES_TO_SCAN):
+            start = i * 100 + 1
+            items = _naver_api_search(query, start=start)
+            if not items:
+                break
+            for item in items:
+                if item.get("mallName") != mall_name:
+                    continue
+                parsed = _naver_parse_item(item, site_name)
+                if parsed:
+                    matched[parsed["product_id"]] = parsed
+            if len(items) < 100:
+                break
+            time.sleep(0.3)
+
+        logger.info("[%s] 수집 완료: %d개 (mallName=%s)", site_name, len(matched), mall_name)
+        return list(matched.values())
     return _fetch_fn
 
 
@@ -774,8 +626,8 @@ _SOURCES = [
     ("G마켓",        get_gmarket_products),
     ("SSG",          get_ssg_products),
 ] + [
-    (cfg["site_name"], _make_naver_fetch_fn(cfg, delay_before=(i > 0)))
-    for i, cfg in enumerate(_NAVER_SITES)
+    (cfg["site_name"], _make_naver_fetch_fn(cfg))
+    for cfg in _NAVER_STORES
 ]
 
 
