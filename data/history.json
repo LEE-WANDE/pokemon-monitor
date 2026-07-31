@@ -6,5 +6,13 @@
     "from_status": "품절",
     "to_status": "판매중",
     "changed_at": "2026-07-31T00:10:54.793825+00:00"
+  },
+  {
+    "product_id": "cardmania_1000000817",
+    "site_name": "카드마니아",
+    "name": "포켓몬카드 MEGA 확장팩 니힐제로 - 메가확장팩 니힐제로",
+    "from_status": "판매중",
+    "to_status": "품절",
+    "changed_at": "2026-07-31T06:51:51.572837+00:00"
   }
 ]
