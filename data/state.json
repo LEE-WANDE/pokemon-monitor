@@ -902,16 +902,16 @@
     "url": "https://www.cardmania2021.com/goods/goods_view.php?goodsNo=1000000799"
   },
   "cardmania_1000000817": {
-    "event_at": null,
+    "event_at": "2026-07-31T00:10:54.793825+00:00",
     "first_seen": "2026-07-24T17:20:23.605459+00:00",
     "image_url": "https://godomall.speedycdn.net/be0fe07e6dbae25ba440ceffa8f31a74/goods/1000000817/image/add2/1000000817_add2_095.jpg",
-    "last_event": null,
+    "last_event": "restocked",
     "name": "포켓몬카드 MEGA 확장팩 니힐제로 - 메가확장팩 니힐제로",
     "price": "30,000원",
     "price_int": 30000,
     "product_id": "cardmania_1000000817",
     "site_name": "카드마니아",
-    "status": "품절",
+    "status": "판매중",
     "url": "https://www.cardmania2021.com/goods/goods_view.php?goodsNo=1000000817"
   },
   "cardmania_1000000827": {
