@@ -612,16 +612,16 @@
     "url": "https://www.pokemonstore.co.kr/pages/product/product-detail.html?productNo=133843162"
   },
   "136570884": {
-    "event_at": "2026-08-21T06:59:06.047312+00:00",
+    "event_at": "2026-08-23T15:29:42.669306+00:00",
     "first_seen": "2026-08-21T06:59:06.047312+00:00",
     "image_url": "https://shopby-images.cdn-nhncommerce.com/Mall-No-h6Ss/20260821/104016.175501499/M6_inner_3D.png",
-    "last_event": "new",
+    "last_event": "restocked",
     "name": "포켓몬 카드 게임 MEGA 확장팩 「스톰에메랄다」",
     "price": "45,000원",
     "price_int": 45000,
     "product_id": "136570884",
     "site_name": "포켓몬스토어",
-    "status": "품절",
+    "status": "판매중",
     "url": "https://www.pokemonstore.co.kr/pages/product/product-detail.html?productNo=136570884"
   },
   "cardmania_1000000490": {
