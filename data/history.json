@@ -150,5 +150,13 @@
     "from_status": "품절",
     "to_status": "판매중",
     "changed_at": "2026-09-06T14:05:07.885053+00:00"
+  },
+  {
+    "product_id": "tcgbox_22859",
+    "site_name": "TCG박스",
+    "name": "MEGA 확장팩 [스톰에메랄다]  1BOX",
+    "from_status": "판매중",
+    "to_status": "품절",
+    "changed_at": "2026-09-06T17:09:06.596705+00:00"
   }
 ]
