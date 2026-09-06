@@ -1785,20 +1785,20 @@
     "url": "https://tcgbox.co.kr/product/mega-확장팩-닌자스피너-1box/22490/"
   },
   "tcgbox_22670": {
-    "event_at": null,
+    "event_at": "2026-09-06T14:05:07.885053+00:00",
     "first_seen": "2026-07-24T17:20:23.605459+00:00",
     "image_url": "https://tcgbox.co.kr/web/product/medium/202606/bae970ce6de0380ded0f4af09244f311.jpg",
-    "last_event": null,
+    "last_event": "restocked",
     "name": "MEGA 확장팩 [어비스아이]  1BOX",
     "price": "45,000원",
     "price_int": 45000,
     "product_id": "tcgbox_22670",
     "site_name": "TCG박스",
-    "status": "품절",
+    "status": "판매중",
     "url": "https://tcgbox.co.kr/product/mega-확장팩-어비스아이-1box/22670/"
   },
   "tcgbox_22859": {
-    "event_at": "2026-08-23T10:58:26.994283+00:00",
+    "event_at": "2026-09-06T14:05:07.885053+00:00",
     "first_seen": "2026-08-22T14:58:06.194943+00:00",
     "image_url": "https://tcgbox.co.kr/web/product/medium/202608/6cb6e868c98f5a6dadfcc87e93fab141.jpg",
     "last_event": "restocked",
@@ -1807,7 +1807,7 @@
     "price_int": 45000,
     "product_id": "tcgbox_22859",
     "site_name": "TCG박스",
-    "status": "품절",
+    "status": "판매중",
     "url": "https://tcgbox.co.kr/product/mega-확장팩-스톰에메랄다-1box/22859/"
   },
   "tcgbox_5514": {
