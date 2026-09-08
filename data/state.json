@@ -941,16 +941,16 @@
     "url": "https://www.cardmania2021.com/goods/goods_view.php?goodsNo=1000000827"
   },
   "cardmania_1000000838": {
-    "event_at": null,
+    "event_at": "2026-09-08T04:17:15.981751+00:00",
     "first_seen": "2026-07-24T17:20:23.605459+00:00",
     "image_url": "https://godomall.speedycdn.net/be0fe07e6dbae25ba440ceffa8f31a74/goods/1000000838/image/add2/1000000838_add2_085.jpg",
-    "last_event": null,
+    "last_event": "restocked",
     "name": "포켓몬카드 MEGA확장팩 어비스아이 - 메가확장팩 어비스아이",
     "price": "45,000원",
     "price_int": 45000,
     "product_id": "cardmania_1000000838",
     "site_name": "카드마니아",
-    "status": "품절",
+    "status": "판매중",
     "url": "https://www.cardmania2021.com/goods/goods_view.php?goodsNo=1000000838"
   },
   "cardmania_1000000862": {
