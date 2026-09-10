@@ -190,5 +190,13 @@
     "from_status": "품절",
     "to_status": "판매중",
     "changed_at": "2026-09-10T06:38:24.374061+00:00"
+  },
+  {
+    "product_id": "cardmania_1000000862",
+    "site_name": "카드마니아",
+    "name": "포켓몬카드 MEGA 확장팩 스톰에메랄다",
+    "from_status": "품절",
+    "to_status": "판매중",
+    "changed_at": "2026-09-10T11:51:29.163285+00:00"
   }
 ]
