@@ -969,7 +969,7 @@
   "gmarket_4697393264": {
     "event_at": "2026-08-18T08:48:47.842444+00:00",
     "first_seen": "2026-08-18T08:48:47.842444+00:00",
-    "image_url": "https://gdimg.gmarket.co.kr/4697393264/still/280?ver=1787042449",
+    "image_url": "https://gdimg.gmarket.co.kr/4697393264/still/280?ver=1789116535",
     "last_event": "new",
     "name": "포켓몬 카드 게임 MEGA 확장팩 니힐제로",
     "price": "30,000원",
@@ -991,6 +991,19 @@
     "site_name": "G마켓",
     "status": "판매중",
     "url": "https://item.gmarket.co.kr/Item?goodsCode=4788006977"
+  },
+  "gmarket_4833806493": {
+    "event_at": "2026-09-11T09:09:09.504318+00:00",
+    "first_seen": "2026-09-11T09:09:09.504318+00:00",
+    "image_url": "https://gdimg.gmarket.co.kr/4833806493/still/280?ver=1789116569",
+    "last_event": "new",
+    "name": "포켓몬 카드 게임 MEGA 확장팩 스톰에메랄다",
+    "price": "45,000원",
+    "price_int": 45000,
+    "product_id": "gmarket_4833806493",
+    "site_name": "G마켓",
+    "status": "판매중",
+    "url": "https://item.gmarket.co.kr/Item?goodsCode=4833806493"
   },
   "naver_91186420542": {
     "event_at": null,
