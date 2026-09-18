@@ -47,9 +47,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("monitor")
 
-STATE_PATH   = Path(__file__).parent / "data" / "state.json"
-HISTORY_PATH = Path(__file__).parent / "data" / "history.json"
-DOCS_PATH    = Path(__file__).parent / "docs" / "index.html"
+STATE_PATH           = Path(__file__).parent / "data" / "state.json"
+HISTORY_PATH         = Path(__file__).parent / "data" / "history.json"
+RESTOCK_PATTERN_PATH = Path(__file__).parent / "data" / "restock_pattern.json"
+DOCS_PATH            = Path(__file__).parent / "docs" / "index.html"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 NAVER_CLIENT_ID = os.environ.get("NAVER_CLIENT_ID", "")
 NAVER_CLIENT_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "")
@@ -732,6 +733,71 @@ def save_history(history: list[dict]) -> None:
     )
 
 
+# ── 재입고 패턴 분석 ──────────────────────────────────────────────────────────
+
+def compute_restock_patterns(history: list[dict]) -> dict[str, dict]:
+    """history.json에서 품절→판매중 이벤트만 뽑아 상품별 재입고 패턴을 계산한다.
+
+    반환: {product_id: {product_id, site_name, name, restock_count,
+                         avg_interval_days, last_restock_at, next_expected_at}}
+    avg_interval_days/next_expected_at은 같은 상품의 재입고가 2회 이상일 때만 계산되고,
+    그 미만이면 None (평균 간격을 낼 데이터가 없음).
+    """
+    by_product: dict[str, list[dict]] = {}
+    for h in history:
+        if h.get("from_status") == "품절" and h.get("to_status") == "판매중":
+            by_product.setdefault(h["product_id"], []).append(h)
+
+    patterns: dict[str, dict] = {}
+    for product_id, events in by_product.items():
+        events.sort(key=lambda e: e["changed_at"])
+        latest = events[-1]
+
+        avg_interval_days = None
+        next_expected_at = None
+        if len(events) >= 2:
+            timestamps = [datetime.fromisoformat(e["changed_at"]) for e in events]
+            intervals_days = [
+                (timestamps[i] - timestamps[i - 1]).total_seconds() / 86400
+                for i in range(1, len(timestamps))
+            ]
+            avg_interval_days = round(sum(intervals_days) / len(intervals_days), 2)
+            next_expected_at = (timestamps[-1] + timedelta(days=avg_interval_days)).isoformat()
+
+        patterns[product_id] = {
+            "product_id":        product_id,
+            "site_name":         latest.get("site_name", ""),
+            "name":              latest.get("name", ""),
+            "restock_count":     len(events),
+            "avg_interval_days": avg_interval_days,
+            "last_restock_at":   latest["changed_at"],
+            "next_expected_at":  next_expected_at,
+        }
+
+    return patterns
+
+
+def save_restock_patterns(patterns: dict[str, dict]) -> None:
+    RESTOCK_PATTERN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    RESTOCK_PATTERN_PATH.write_text(
+        json.dumps(list(patterns.values()), ensure_ascii=False, indent=2, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def _format_restock_pattern_line(pattern: dict | None) -> str | None:
+    """디스코드 알림 하단에 붙일 '📊 평균 재입고 주기: N일 | 다음 예상: M/D' 문자열.
+    재입고 2회 미만(평균을 낼 수 없음)이면 None."""
+    if not pattern or pattern.get("avg_interval_days") is None:
+        return None
+    avg_days = pattern["avg_interval_days"]
+    try:
+        next_dt = datetime.fromisoformat(pattern["next_expected_at"])
+    except (TypeError, ValueError):
+        return None
+    return f"📊 평균 재입고 주기: {avg_days}일 | 다음 예상: {next_dt.month}/{next_dt.day}"
+
+
 # ── GitHub Pages 대시보드 생성 ─────────────────────────────────────────────────
 
 def _is_recent_event(event_at: str | None) -> bool:
@@ -744,7 +810,12 @@ def _is_recent_event(event_at: str | None) -> bool:
     return (datetime.now(timezone.utc) - dt) < _EVENT_BADGE_WINDOW
 
 
-def generate_dashboard(state: dict[str, dict], last_checked_iso: str, next_check_iso: str) -> str:
+def generate_dashboard(
+    state: dict[str, dict],
+    patterns: dict[str, dict],
+    last_checked_iso: str,
+    next_check_iso: str,
+) -> str:
     products = list(state.values())
     products.sort(key=lambda p: (
         0 if (p.get("last_event") in ("new", "restocked") and _is_recent_event(p.get("event_at"))) else 1,
@@ -767,8 +838,13 @@ def generate_dashboard(state: dict[str, dict], last_checked_iso: str, next_check
         for p in products
     ]
 
+    # 재입고 2회 이상 상품만, 다음 예상일이 빠른 순으로 정렬
+    pattern_list = [p for p in patterns.values() if p.get("restock_count", 0) >= 2]
+    pattern_list.sort(key=lambda p: p.get("next_expected_at") or "9999")
+
     html_out = _DASHBOARD_TEMPLATE
     html_out = html_out.replace("__PRODUCTS_JSON__", json.dumps(slim, ensure_ascii=False))
+    html_out = html_out.replace("__RESTOCK_PATTERNS_JSON__", json.dumps(pattern_list, ensure_ascii=False))
     html_out = html_out.replace("__SITE_COLORS_JSON__", json.dumps(_SITE_COLORS, ensure_ascii=False))
     html_out = html_out.replace("__LAST_CHECKED__", last_checked_iso or "")
     html_out = html_out.replace("__NEXT_CHECK__", next_check_iso or "")
@@ -882,6 +958,32 @@ _DASHBOARD_TEMPLATE = r"""<!doctype html>
   .footer-dot { width: 8px; height: 8px; border-radius: 50%; background: #16a34a; animation: pulse 1.6s infinite; }
   .empty { text-align: center; padding: 60px 0; color: #999; }
 
+  .pattern-section { margin-top: 36px; }
+  .pattern-section h2 { font-size: 1.1rem; margin: 0 0 14px; }
+  .pattern-table-wrap {
+    background: #fff; border-radius: 14px; overflow-x: auto;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  table.pattern-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  table.pattern-table th, table.pattern-table td {
+    padding: 10px 14px; text-align: left; white-space: nowrap;
+  }
+  table.pattern-table th {
+    color: #6b7280; font-weight: 600; font-size: 0.75rem;
+    border-bottom: 1px solid #eee;
+  }
+  table.pattern-table td { border-bottom: 1px solid #f3f4f6; }
+  table.pattern-table tr:last-child td { border-bottom: none; }
+  table.pattern-table td.name-cell {
+    white-space: normal; max-width: 320px; font-weight: 600;
+  }
+  .pattern-site-tag {
+    display: inline-block; font-size: 0.68rem; font-weight: 700; color: #fff;
+    padding: 2px 7px; border-radius: 5px; margin-right: 6px;
+  }
+  .pattern-next.overdue { color: #dc2626; font-weight: 800; }
+  .pattern-empty { text-align: center; padding: 30px 0; color: #999; font-size: 0.85rem; }
+
   @media (max-width: 720px) {
     .summary { grid-template-columns: repeat(2, 1fr); }
     h1 { font-size: 1.25rem; }
@@ -922,6 +1024,11 @@ _DASHBOARD_TEMPLATE = r"""<!doctype html>
 
   <div class="grid" id="grid"></div>
   <div class="empty" id="emptyMsg" style="display:none;">조건에 맞는 상품이 없습니다.</div>
+
+  <section class="pattern-section">
+    <h2>📊 재입고 패턴</h2>
+    <div id="patternWrap"></div>
+  </section>
 </main>
 
 <footer>
@@ -931,6 +1038,7 @@ _DASHBOARD_TEMPLATE = r"""<!doctype html>
 
 <script>
 const PRODUCTS = __PRODUCTS_JSON__;
+const RESTOCK_PATTERNS = __RESTOCK_PATTERNS_JSON__;
 const SITE_COLORS = __SITE_COLORS_JSON__;
 const LAST_CHECKED = "__LAST_CHECKED__";
 const NEXT_CHECK = "__NEXT_CHECK__";
@@ -1038,8 +1146,61 @@ function updateCountdown() {
   el.textContent = '다음 체크까지 약 ' + m + '분 ' + s + '초';
 }
 
+function fmtDate(iso) {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    return d.getFullYear() + '.' + (d.getMonth() + 1) + '.' + d.getDate();
+  } catch (e) {
+    return '-';
+  }
+}
+
+function isOverdue(iso) {
+  if (!iso) return false;
+  const d = new Date(iso);
+  const today = new Date();
+  d.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return d.getTime() <= today.getTime();
+}
+
+function renderPatterns() {
+  const wrap = document.getElementById('patternWrap');
+  if (!RESTOCK_PATTERNS || RESTOCK_PATTERNS.length === 0) {
+    wrap.innerHTML = '<div class="pattern-empty">아직 재입고가 2회 이상 감지된 상품이 없습니다.</div>';
+    return;
+  }
+
+  let rows = '';
+  for (const p of RESTOCK_PATTERNS) {
+    const color = SITE_COLORS[p.site_name] || '#475569';
+    const overdue = isOverdue(p.next_expected_at);
+    rows +=
+      '<tr>' +
+        '<td class="name-cell"><span class="pattern-site-tag" style="background:' + color + '">' +
+          escapeHtml(p.site_name) + '</span>' + escapeHtml(p.name) + '</td>' +
+        '<td>' + p.restock_count + '회</td>' +
+        '<td>' + (p.avg_interval_days != null ? p.avg_interval_days + '일' : '-') + '</td>' +
+        '<td>' + fmtDate(p.last_restock_at) + '</td>' +
+        '<td class="pattern-next' + (overdue ? ' overdue' : '') + '">' +
+          fmtDate(p.next_expected_at) + (overdue ? ' ⚠️' : '') +
+        '</td>' +
+      '</tr>';
+  }
+
+  wrap.innerHTML =
+    '<div class="pattern-table-wrap"><table class="pattern-table">' +
+      '<thead><tr>' +
+        '<th>상품명</th><th>재입고 횟수</th><th>평균 주기</th><th>마지막 재입고</th><th>다음 예상일</th>' +
+      '</tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+    '</table></div>';
+}
+
 updateSummary();
 render('all');
+renderPatterns();
 updateCountdown();
 setInterval(updateCountdown, 1000);
 setTimeout(() => location.reload(), 5 * 60 * 1000);
@@ -1051,7 +1212,7 @@ setTimeout(() => location.reload(), 5 * 60 * 1000);
 
 # ── 디스코드 알림 ─────────────────────────────────────────────────────────────
 
-def send_discord(product: dict, badge: str) -> None:
+def send_discord(product: dict, badge: str, pattern: dict | None = None) -> None:
     if not DISCORD_WEBHOOK_URL:
         logger.warning("DISCORD_WEBHOOK_URL 미설정 — 알림 건너뜀: %s", product["name"])
         return
@@ -1064,10 +1225,16 @@ def send_discord(product: dict, badge: str) -> None:
     else:
         title, color = f"🔄 재입고 감지! {site_label}", 0x1E88E5
 
+    description = f"**{product['name']}**"
+    if badge == "restocked":
+        pattern_line = _format_restock_pattern_line(pattern)
+        if pattern_line:
+            description += f"\n\n{pattern_line}"
+
     embed = {
         "title":       title,
         "url":         product.get("url", ""),
-        "description": f"**{product['name']}**",
+        "description": description,
         "color":       color,
         "fields": [
             {"name": "💰 가격", "value": product.get("price", "—"), "inline": True},
@@ -1141,7 +1308,9 @@ def main() -> None:
             if was_sold_out and now_available:
                 product["last_event"] = "restocked"
                 product["event_at"] = now_iso
-                send_discord(product, "restocked")
+                # history에 이번 재입고까지 반영된 상태로 패턴을 계산해 알림에 포함
+                pattern = compute_restock_patterns(history).get(product_id)
+                send_discord(product, "restocked", pattern=pattern)
                 restocked_count += 1
             else:
                 # 이벤트 없음 — 이전 신규/재입고 배지를 24시간 표시 동안 유지
@@ -1153,9 +1322,15 @@ def main() -> None:
     save_state(merged)
     save_history(history)
 
+    restock_patterns = compute_restock_patterns(history)
+    save_restock_patterns(restock_patterns)
+
     next_check_iso = (datetime.now(timezone.utc) + timedelta(minutes=_CHECK_INTERVAL_MINUTES)).isoformat()
     DOCS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DOCS_PATH.write_text(generate_dashboard(merged, now_iso, next_check_iso), encoding="utf-8")
+    DOCS_PATH.write_text(
+        generate_dashboard(merged, restock_patterns, now_iso, next_check_iso),
+        encoding="utf-8",
+    )
 
     if is_first_run:
         logger.info("초기 로드 완료: %d개 (%s)", len(current), summary)
