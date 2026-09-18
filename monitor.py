@@ -15,7 +15,9 @@
 필터:
   - "확장팩" or "하이클래스팩" 포함
   - "1팩", "카드세트" 포함 시 제외
-  - 가격 20,000 ~ 45,000원
+  - 가격: 아래 두 구간 중 하나라도 만족하면 통과
+      1) 일반: 20,000 ~ 45,000원
+      2) 30주년 한정("30주년"/"30th" 포함 상품만): 70,000 ~ 75,000원
 
 상태 저장:
   GitHub Actions는 서버가 없어 DB를 유지할 수 없으므로,
@@ -51,6 +53,8 @@ NAVER_CLIENT_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "")
 
 PRICE_MIN = 20_000
 PRICE_MAX = 45_000
+PRICE_30TH_MIN = 70_000  # "30주년"/"30th" 포함 상품에만 적용되는 별도 가격 구간
+PRICE_30TH_MAX = 75_000
 
 _CHECK_INTERVAL_MINUTES = 20
 _EVENT_BADGE_WINDOW = timedelta(hours=24)
@@ -633,8 +637,16 @@ def _passes_filter(product: dict) -> bool:
         return False
     if "1팩" in name or "카드세트" in name:
         return False
+
     price_int = product.get("price_int", 0)
-    return PRICE_MIN <= price_int <= PRICE_MAX
+    if PRICE_MIN <= price_int <= PRICE_MAX:
+        return True
+
+    is_30th = "30주년" in name or "30th" in name
+    if is_30th and PRICE_30TH_MIN <= price_int <= PRICE_30TH_MAX:
+        return True
+
+    return False
 
 
 _SOURCES = [
