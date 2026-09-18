@@ -8,9 +8,12 @@
   4. 옥션           (HTML — onclick setItemHistory 파싱)
   5. G마켓          (HTML — onclick setItemHistory 파싱)
   6. SSG            (Next.js __NEXT_DATA__ JSON)
-  7. 네이버 스마트스토어 × 3 (플러스디스트리뷰션 / 토이벤져스 / 문구달)
-     — 네이버 쇼핑 검색 API(openapi.naver.com)로 키워드 검색 후 mallName으로 필터링
-     — smartstore.naver.com 직접 크롤링은 로그인 리다이렉트로 차단되어 API 방식으로 전환
+
+  [비활성화됨 — 2026-09-18] 네이버 스마트스토어 × 3 (플러스디스트리뷰션 / 토이벤져스 / 문구달)
+     네이버 쇼핑 검색 API(openapi.naver.com)가 "404 Invalid search api (SE05)"를
+     반환하기 시작해 호출을 비활성화함. 관련 코드는 삭제하지 않고 주석 처리해
+     남겨뒀으며(아래 "7. 네이버 스마트스토어" 섹션), API가 복구되거나 대안을
+     찾으면 주석을 해제해 복원할 수 있다.
 
 필터:
   - "확장팩" or "하이클래스팩" 포함
@@ -519,114 +522,119 @@ def get_ssg_products() -> list[dict]:
     return list(seen.values())
 
 
-# ── 7. 네이버 스마트스토어 (쇼핑 검색 API) ────────────────────────────────────
-# 방식: 네이버 쇼핑 검색 API(openapi.naver.com/v1/search/shop.json)로
-#       스토어별 검색어를 검색한 뒤, 응답의 mallName이 해당 스토어와 일치하는
-#       상품만 추려낸다. smartstore.naver.com 직접 크롤링은 로그인 리다이렉트로
-#       차단되어(도메인 전체에 걸린 봇 차단으로 추정) 검색 API로 전환.
+# ── 7. 네이버 스마트스토어 (쇼핑 검색 API) — 2026-09-18부로 비활성화 ─────────
+# 네이버 쇼핑 검색 API(openapi.naver.com/v1/search/shop.json)가
+# "404 Invalid search api (SE05)" 오류를 반환하기 시작함 (API 정책/엔드포인트
+# 변경 또는 애플리케이션의 검색 API 사용 권한이 만료·해제된 것으로 추정).
+# 원인이 해소되거나 대안(예: 재등록된 애플리케이션 키, 다른 수집 방식)을 찾으면
+# 아래 코드 전체의 주석을 해제하고, _SOURCES 하단의 결합부도 함께 복원할 것.
 #
-# 제한사항:
+# 방식: 스토어별 검색어를 검색한 뒤, 응답의 mallName이 해당 스토어와 일치하는
+#       상품만 추려낸다. smartstore.naver.com 직접 크롤링은 로그인 리다이렉트로
+#       차단되어(도메인 전체에 걸린 봇 차단으로 추정) 검색 API로 전환했었음.
+#
+# 제한사항 (정상 동작 시 기준):
 #   - 검색 API는 "네이버쇼핑에 노출된" 상품만 반환하므로 스토어의 전체 카테고리
 #     재고와 100% 일치하지 않을 수 있음 (검색 노출 여부에 좌우됨)
 #   - 품절 여부 필드를 제공하지 않아 모든 상품을 판매중으로 간주함
 #     → 재입고 감지는 사실상 불가, "신규 노출 감지"로 동작
-
-_NAVER_API_URL = "https://openapi.naver.com/v1/search/shop.json"
-_NAVER_PAGES_TO_SCAN = 3   # display=100 기준 최대 300개까지 검색 결과 스캔
-_NAVER_TAG_RE = re.compile(r"</?b>")
-
-# mall_name 검증 결과 (2026-07-25):
-#   - 토이 벤져스: 검색 결과에 mallName="토이 벤져스"(공백 포함)로 실제 확인됨
-#   - 플러스디스트리뷰션 / 문구달: "포켓몬 카드 확장팩"/"포켓몬카드 확장팩" 검색 결과를
-#     sim·date 정렬 + API 최대 조회 한도(1,000건)까지 스캔해도 두 스토어의 상품이
-#     전혀 노출되지 않음 → mallName 미확인 (아래는 상호명 그대로 넣어둔 추정값).
-#     스토어가 가격비교 노출을 켜지 않았거나 포켓몬 카드 상품을 아직 등록하지
-#     않았을 가능성이 큼. 노출되면 다음 실행부터 자동으로 잡힘.
-_NAVER_STORES = [
-    {
-        "site_name": "네이버 스마트스토어(플러스디스트리뷰션)",
-        "mall_name": "플러스디스트리뷰션",
-        "query":     "포켓몬 카드 확장팩",
-    },
-    {
-        "site_name": "네이버 스마트스토어(토이벤져스)",
-        "mall_name": "토이 벤져스",  # 실제 mallName은 공백 포함 (API 조회로 확인)
-        "query":     "포켓몬 카드 확장팩",
-    },
-    {
-        "site_name": "네이버 스마트스토어(문구달)",
-        "mall_name": "문구달",
-        "query":     "포켓몬 카드 확장팩",
-    },
-]
-
-
-def _naver_api_search(query: str, start: int, display: int = 100) -> list[dict]:
-    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
-        raise RuntimeError("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 미설정")
-
-    headers = {
-        "X-Naver-Client-Id":     NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
-    }
-    params = {"query": query, "display": display, "start": start, "sort": "sim"}
-    r = requests.get(_NAVER_API_URL, headers=headers, params=params, timeout=15)
-    r.raise_for_status()
-    return r.json().get("items", [])
-
-
-def _naver_parse_item(item: dict, site_name: str) -> dict | None:
-    product_id = item.get("productId")
-    if not product_id:
-        return None
-
-    name = html_lib.unescape(_NAVER_TAG_RE.sub("", item.get("title", ""))).strip()
-    if not name:
-        return None
-
-    try:
-        price_int = int(item.get("lprice") or 0)
-    except (TypeError, ValueError):
-        price_int = 0
-
-    return {
-        "product_id": f"naver_{product_id}",
-        "name":       name,
-        "price":      f"{price_int:,}원",
-        "price_int":  price_int,
-        # 쇼핑 검색 API는 품절 여부를 제공하지 않음 — 노출되면 판매중으로 간주
-        "status":     "판매중",
-        "url":        item.get("link", ""),
-        "image_url":  item.get("image", ""),
-        "site_name":  site_name,
-    }
-
-
-def _make_naver_fetch_fn(cfg: dict):
-    def _fetch_fn() -> list[dict]:
-        site_name = cfg["site_name"]
-        mall_name = cfg["mall_name"]
-        query     = cfg["query"]
-
-        matched: dict[str, dict] = {}
-        for i in range(_NAVER_PAGES_TO_SCAN):
-            start = i * 100 + 1
-            items = _naver_api_search(query, start=start)
-            if not items:
-                break
-            for item in items:
-                if item.get("mallName") != mall_name:
-                    continue
-                parsed = _naver_parse_item(item, site_name)
-                if parsed:
-                    matched[parsed["product_id"]] = parsed
-            if len(items) < 100:
-                break
-            time.sleep(0.3)
-
-        logger.info("[%s] 수집 완료: %d개 (mallName=%s)", site_name, len(matched), mall_name)
-        return list(matched.values())
-    return _fetch_fn
+#
+# _NAVER_API_URL = "https://openapi.naver.com/v1/search/shop.json"
+# _NAVER_PAGES_TO_SCAN = 3   # display=100 기준 최대 300개까지 검색 결과 스캔
+# _NAVER_TAG_RE = re.compile(r"</?b>")
+#
+# # mall_name 검증 결과 (2026-07-25):
+# #   - 토이 벤져스: 검색 결과에 mallName="토이 벤져스"(공백 포함)로 실제 확인됨
+# #   - 플러스디스트리뷰션 / 문구달: "포켓몬 카드 확장팩"/"포켓몬카드 확장팩" 검색 결과를
+# #     sim·date 정렬 + API 최대 조회 한도(1,000건)까지 스캔해도 두 스토어의 상품이
+# #     전혀 노출되지 않음 → mallName 미확인 (아래는 상호명 그대로 넣어둔 추정값).
+# #     스토어가 가격비교 노출을 켜지 않았거나 포켓몬 카드 상품을 아직 등록하지
+# #     않았을 가능성이 큼. 노출되면 다음 실행부터 자동으로 잡힘.
+# _NAVER_STORES = [
+#     {
+#         "site_name": "네이버 스마트스토어(플러스디스트리뷰션)",
+#         "mall_name": "플러스디스트리뷰션",
+#         "query":     "포켓몬 카드 확장팩",
+#     },
+#     {
+#         "site_name": "네이버 스마트스토어(토이벤져스)",
+#         "mall_name": "토이 벤져스",  # 실제 mallName은 공백 포함 (API 조회로 확인)
+#         "query":     "포켓몬 카드 확장팩",
+#     },
+#     {
+#         "site_name": "네이버 스마트스토어(문구달)",
+#         "mall_name": "문구달",
+#         "query":     "포켓몬 카드 확장팩",
+#     },
+# ]
+#
+#
+# def _naver_api_search(query: str, start: int, display: int = 100) -> list[dict]:
+#     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+#         raise RuntimeError("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 미설정")
+#
+#     headers = {
+#         "X-Naver-Client-Id":     NAVER_CLIENT_ID,
+#         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
+#     }
+#     params = {"query": query, "display": display, "start": start, "sort": "sim"}
+#     r = requests.get(_NAVER_API_URL, headers=headers, params=params, timeout=15)
+#     r.raise_for_status()
+#     return r.json().get("items", [])
+#
+#
+# def _naver_parse_item(item: dict, site_name: str) -> dict | None:
+#     product_id = item.get("productId")
+#     if not product_id:
+#         return None
+#
+#     name = html_lib.unescape(_NAVER_TAG_RE.sub("", item.get("title", ""))).strip()
+#     if not name:
+#         return None
+#
+#     try:
+#         price_int = int(item.get("lprice") or 0)
+#     except (TypeError, ValueError):
+#         price_int = 0
+#
+#     return {
+#         "product_id": f"naver_{product_id}",
+#         "name":       name,
+#         "price":      f"{price_int:,}원",
+#         "price_int":  price_int,
+#         # 쇼핑 검색 API는 품절 여부를 제공하지 않음 — 노출되면 판매중으로 간주
+#         "status":     "판매중",
+#         "url":        item.get("link", ""),
+#         "image_url":  item.get("image", ""),
+#         "site_name":  site_name,
+#     }
+#
+#
+# def _make_naver_fetch_fn(cfg: dict):
+#     def _fetch_fn() -> list[dict]:
+#         site_name = cfg["site_name"]
+#         mall_name = cfg["mall_name"]
+#         query     = cfg["query"]
+#
+#         matched: dict[str, dict] = {}
+#         for i in range(_NAVER_PAGES_TO_SCAN):
+#             start = i * 100 + 1
+#             items = _naver_api_search(query, start=start)
+#             if not items:
+#                 break
+#             for item in items:
+#                 if item.get("mallName") != mall_name:
+#                     continue
+#                 parsed = _naver_parse_item(item, site_name)
+#                 if parsed:
+#                     matched[parsed["product_id"]] = parsed
+#             if len(items) < 100:
+#                 break
+#             time.sleep(0.3)
+#
+#         logger.info("[%s] 수집 완료: %d개 (mallName=%s)", site_name, len(matched), mall_name)
+#         return list(matched.values())
+#     return _fetch_fn
 
 
 # ── 공통 필터 ─────────────────────────────────────────────────────────────────
@@ -656,10 +664,13 @@ _SOURCES = [
     ("옥션",         get_auction_products),
     ("G마켓",        get_gmarket_products),
     ("SSG",          get_ssg_products),
-] + [
-    (cfg["site_name"], _make_naver_fetch_fn(cfg))
-    for cfg in _NAVER_STORES
 ]
+# 네이버 스마트스토어 3곳은 검색 API 404 오류로 비활성화 (위 "7. 네이버 스마트스토어" 섹션 참고).
+# 복구 시 아래 줄의 주석을 해제:
+# _SOURCES = _SOURCES + [
+#     (cfg["site_name"], _make_naver_fetch_fn(cfg))
+#     for cfg in _NAVER_STORES
+# ]
 
 
 def collect_all() -> tuple[dict[str, dict], str]:
