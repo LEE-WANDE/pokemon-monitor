@@ -1,0 +1,56 @@
+[
+  {
+    "product_id": "cardmania_1000000817",
+    "site_name": "카드마니아",
+    "name": "포켓몬카드 MEGA 확장팩 니힐제로 - 메가확장팩 니힐제로",
+    "restock_count": 1,
+    "avg_interval_days": null,
+    "last_restock_at": "2026-07-31T00:10:54.793825+00:00",
+    "next_expected_at": null
+  },
+  {
+    "product_id": "tcgbox_22859",
+    "site_name": "TCG박스",
+    "name": "MEGA 확장팩 [스톰에메랄다]  1BOX",
+    "restock_count": 2,
+    "avg_interval_days": 14.13,
+    "last_restock_at": "2026-09-06T14:05:07.885053+00:00",
+    "next_expected_at": "2026-09-20T17:12:19.885053+00:00"
+  },
+  {
+    "product_id": "136570884",
+    "site_name": "포켓몬스토어",
+    "name": "포켓몬 카드 게임 MEGA 확장팩 「스톰에메랄다」",
+    "restock_count": 4,
+    "avg_interval_days": 2.29,
+    "last_restock_at": "2026-08-30T12:13:59.609659+00:00",
+    "next_expected_at": "2026-09-01T19:11:35.609659+00:00"
+  },
+  {
+    "product_id": "cardmania_1000000862",
+    "site_name": "카드마니아",
+    "name": "포켓몬카드 MEGA 확장팩 스톰에메랄다",
+    "restock_count": 3,
+    "avg_interval_days": 5.1,
+    "last_restock_at": "2026-09-10T11:51:29.163285+00:00",
+    "next_expected_at": "2026-09-15T14:15:29.163285+00:00"
+  },
+  {
+    "product_id": "tcgbox_22670",
+    "site_name": "TCG박스",
+    "name": "MEGA 확장팩 [어비스아이]  1BOX",
+    "restock_count": 1,
+    "avg_interval_days": null,
+    "last_restock_at": "2026-09-06T14:05:07.885053+00:00",
+    "next_expected_at": null
+  },
+  {
+    "product_id": "cardmania_1000000838",
+    "site_name": "카드마니아",
+    "name": "포켓몬카드 MEGA확장팩 어비스아이 - 메가확장팩 어비스아이",
+    "restock_count": 2,
+    "avg_interval_days": 2.1,
+    "last_restock_at": "2026-09-10T06:38:24.374061+00:00",
+    "next_expected_at": "2026-09-12T09:02:24.374061+00:00"
+  }
+]
