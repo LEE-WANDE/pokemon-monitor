@@ -1836,6 +1836,19 @@
     "status": "품절",
     "url": "https://tcgbox.co.kr/product/mega-확장팩-스톰에메랄다-1box/22859/"
   },
+  "tcgbox_22970": {
+    "event_at": "2026-09-19T11:34:49.849188+00:00",
+    "first_seen": "2026-09-19T11:34:49.849188+00:00",
+    "image_url": "https://tcgbox.co.kr/web/product/medium/202609/16a26ff24241c365fc70dfb5fde1c8ff.png",
+    "last_event": "new",
+    "name": "MEGA 확장팩 [30th CELEBRATION]  1BOX",
+    "price": "70,000원",
+    "price_int": 70000,
+    "product_id": "tcgbox_22970",
+    "site_name": "TCG박스",
+    "status": "판매중",
+    "url": "https://tcgbox.co.kr/product/mega-확장팩-30th-celebration-1box/22970/"
+  },
   "tcgbox_5514": {
     "event_at": null,
     "first_seen": "2026-07-24T17:20:23.605459+00:00",
