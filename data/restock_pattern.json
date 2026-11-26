@@ -57,9 +57,9 @@
     "product_id": "cardmania_1000000746",
     "site_name": "카드마니아",
     "name": "포켓몬카드 스칼렛&바이올렛 확장팩 화이트플레어",
-    "restock_count": 1,
-    "avg_interval_days": null,
-    "last_restock_at": "2026-11-24T01:53:53.905072+00:00",
-    "next_expected_at": null
+    "restock_count": 2,
+    "avg_interval_days": 2.28,
+    "last_restock_at": "2026-11-26T08:37:45.500100+00:00",
+    "next_expected_at": "2026-11-28T15:20:57.500100+00:00"
   }
 ]
